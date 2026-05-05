@@ -1,0 +1,226 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 740 740">
+  <defs>
+    <!-- Terrain texture pattern -->
+    <filter id="noise">
+      <feTurbulence type="fractalNoise" baseFrequency="0.03" numOctaves="4" seed="42"/>
+      <feColorMatrix type="saturate" values="0"/>
+      <feComponentTransfer>
+        <feFuncA type="linear" slope="0.08"/>
+      </feComponentTransfer>
+    </filter>
+
+    <!-- Water ripple filter -->
+    <filter id="waterRipple">
+      <feTurbulence type="turbulence" baseFrequency="0.04 0.06" numOctaves="3" seed="7"/>
+      <feDisplacementMap in="SourceGraphic" scale="4"/>
+    </filter>
+
+    <!-- Subtle inner glow for lakes -->
+    <filter id="lakeGlow">
+      <feGaussianBlur stdDeviation="6" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+
+    <!-- Radial gradient for terrain - darker at edges -->
+    <radialGradient id="terrainGrad" cx="50%" cy="50%" r="55%">
+      <stop offset="0%" stop-color="#6a9e4a" stop-opacity="0.9"/>
+      <stop offset="50%" stop-color="#5a8e3a" stop-opacity="0.85"/>
+      <stop offset="80%" stop-color="#3a6e2a" stop-opacity="0.9"/>
+      <stop offset="100%" stop-color="#2a5018" stop-opacity="0.95"/>
+    </radialGradient>
+
+    <!-- Lake water gradient - left lake -->
+    <radialGradient id="lakeGrad1" cx="45%" cy="45%" r="50%">
+      <stop offset="0%" stop-color="#a8dce8" stop-opacity="0.7"/>
+      <stop offset="40%" stop-color="#5baec4" stop-opacity="0.65"/>
+      <stop offset="75%" stop-color="#3a8aa0" stop-opacity="0.6"/>
+      <stop offset="100%" stop-color="#2a6a4a" stop-opacity="0.5"/>
+    </radialGradient>
+
+    <!-- Lake water gradient - right lake -->
+    <radialGradient id="lakeGrad2" cx="55%" cy="40%" r="50%">
+      <stop offset="0%" stop-color="#b0e0ea" stop-opacity="0.7"/>
+      <stop offset="40%" stop-color="#5ab0c6" stop-opacity="0.65"/>
+      <stop offset="75%" stop-color="#3888a0" stop-opacity="0.6"/>
+      <stop offset="100%" stop-color="#2a6a4a" stop-opacity="0.5"/>
+    </radialGradient>
+
+    <!-- Shore gradient -->
+    <radialGradient id="shoreGrad1" cx="50%" cy="50%" r="55%">
+      <stop offset="60%" stop-color="transparent"/>
+      <stop offset="80%" stop-color="#5a7a30" stop-opacity="0.3"/>
+      <stop offset="100%" stop-color="#4a6a28" stop-opacity="0.5"/>
+    </radialGradient>
+
+    <!-- Light reflection on water -->
+    <radialGradient id="waterShine1" cx="35%" cy="35%" r="30%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.25"/>
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="waterShine2" cx="40%" cy="30%" r="25%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.2"/>
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <!-- Base terrain fill -->
+  <rect width="740" height="740" fill="#4a7e32" opacity="0.9"/>
+
+  <!-- Terrain radial shading -->
+  <rect width="740" height="740" fill="url(#terrainGrad)"/>
+
+  <!-- Terrain texture noise overlay -->
+  <rect width="740" height="740" filter="url(#noise)" opacity="0.5"/>
+
+  <!-- Swirling terrain paths (like the classic board's painted look) -->
+  <g opacity="0.12">
+    <!-- Organic terrain swirls -->
+    <path d="M0,200 Q120,180 200,220 Q300,260 370,200 Q450,140 550,180 Q650,220 740,190"
+          fill="none" stroke="#8ab060" stroke-width="40"/>
+    <path d="M0,500 Q100,480 200,520 Q320,560 420,500 Q520,440 620,480 Q700,510 740,490"
+          fill="none" stroke="#7aa050" stroke-width="35"/>
+    <path d="M200,0 Q180,100 220,200 Q260,300 200,400 Q160,500 210,600 Q240,680 220,740"
+          fill="none" stroke="#8aaa58" stroke-width="30"/>
+    <path d="M550,0 Q530,120 570,220 Q600,320 540,400 Q500,480 540,580 Q570,660 550,740"
+          fill="none" stroke="#7a9a48" stroke-width="28"/>
+    <!-- Diagonal wisps -->
+    <path d="M0,0 Q200,100 350,200 Q450,300 370,370"
+          fill="none" stroke="#9aba68" stroke-width="25"/>
+    <path d="M740,0 Q550,100 400,200 Q350,280 380,370"
+          fill="none" stroke="#8aaa58" stroke-width="22"/>
+    <path d="M0,740 Q200,650 350,550 Q420,480 370,400"
+          fill="none" stroke="#9aba68" stroke-width="25"/>
+    <path d="M740,740 Q550,640 400,550 Q350,480 380,400"
+          fill="none" stroke="#8aaa58" stroke-width="22"/>
+  </g>
+
+  <!-- Dark terrain patches near corners -->
+  <g opacity="0.15">
+    <ellipse cx="60" cy="60" rx="120" ry="100" fill="#1a4010"/>
+    <ellipse cx="680" cy="60" rx="120" ry="100" fill="#1a4010"/>
+    <ellipse cx="60" cy="680" rx="120" ry="100" fill="#1a4010"/>
+    <ellipse cx="680" cy="680" rx="120" ry="100" fill="#1a4010"/>
+  </g>
+
+  <!-- Yellowish highlight paths through center -->
+  <g opacity="0.08">
+    <path d="M100,350 Q250,320 370,370 Q500,400 640,360"
+          fill="none" stroke="#c8c040" stroke-width="60"/>
+    <path d="M370,100 Q350,250 370,370 Q390,500 370,640"
+          fill="none" stroke="#c0b838" stroke-width="50"/>
+  </g>
+
+  <!-- === LEFT LAKE (cells [4,2][4,3][5,2][5,3] → area 148-296, 296-444) === -->
+  <!-- Center: 222, 370  Size: ~148 x 148 -->
+  <g filter="url(#lakeGlow)">
+    <!-- Outer marshy shore -->
+    <path d="M152,310 C165,295 195,288 222,292 C250,288 272,298 290,312
+             C302,330 298,355 300,375 C302,400 296,420 285,435
+             C268,448 245,452 222,450 C195,452 172,445 158,432
+             C146,418 142,398 144,375 C142,350 146,328 152,310 Z"
+          fill="#3a5520" opacity="0.5"/>
+
+    <!-- Inner water body - irregular organic shape -->
+    <path d="M162,318 C175,302 200,296 225,300 C248,296 265,305 280,318
+             C290,332 292,352 290,372 C292,394 286,414 276,426
+             C262,438 242,442 222,440 C200,443 180,436 166,424
+             C156,412 152,394 154,372 C152,350 155,332 162,318 Z"
+          fill="url(#lakeGrad1)"/>
+
+    <!-- Irregular shoreline details - small inlets and points -->
+    <path d="M170,325 C168,335 172,340 178,338 C182,334 176,328 170,325 Z"
+          fill="#3a5a28" opacity="0.35"/>
+    <path d="M272,330 C278,336 282,344 276,346 C270,342 268,334 272,330 Z"
+          fill="#3a5a28" opacity="0.35"/>
+    <path d="M165,410 C162,418 168,424 174,420 C178,414 170,408 165,410 Z"
+          fill="#3a5a28" opacity="0.3"/>
+    <path d="M268,420 C274,425 278,418 274,412 C268,410 264,416 268,420 Z"
+          fill="#3a5a28" opacity="0.3"/>
+
+    <!-- Water surface highlights -->
+    <path d="M190,330 C200,325 215,328 210,338 C205,345 185,340 190,330 Z"
+          fill="rgba(255,255,255,0.2)"/>
+    <path d="M230,345 C242,340 250,348 244,356 C238,360 225,355 230,345 Z"
+          fill="rgba(255,255,255,0.12)"/>
+
+    <!-- Depth shading -->
+    <path d="M180,395 C200,400 240,402 260,395 C250,408 210,410 180,395 Z"
+          fill="#2a5a78" opacity="0.2"/>
+
+    <!-- Small island/rock -->
+    <ellipse cx="235" cy="375" rx="6" ry="4" fill="#4a6830" opacity="0.4" transform="rotate(-15,235,375)"/>
+  </g>
+
+  <!-- === RIGHT LAKE (cells [4,6][4,7][5,6][5,7] → area 444-592, 296-444) === -->
+  <!-- Center: 518, 370  Size: ~148 x 148 -->
+  <g filter="url(#lakeGlow)">
+    <!-- Outer marshy shore -->
+    <path d="M450,315 C468,298 495,290 520,295 C545,290 568,300 585,316
+             C596,335 594,358 592,378 C594,402 588,422 578,436
+             C562,450 540,454 518,452 C494,455 470,446 456,432
+             C445,416 440,396 443,375 C440,352 444,332 450,315 Z"
+          fill="#3a5520" opacity="0.5"/>
+
+    <!-- Inner water body - different irregular shape than left lake -->
+    <path d="M458,322 C472,304 498,298 522,303 C544,298 562,308 575,322
+             C586,338 585,358 582,378 C585,400 578,418 568,428
+             C554,440 538,444 518,442 C496,445 476,438 464,426
+             C454,414 450,396 453,375 C450,354 453,336 458,322 Z"
+          fill="url(#lakeGrad2)"/>
+
+    <!-- Shoreline details -->
+    <path d="M465,332 C462,340 466,348 472,344 C476,338 470,330 465,332 Z"
+          fill="#3a5a28" opacity="0.35"/>
+    <path d="M570,325 C576,332 580,340 574,344 C568,340 564,330 570,325 Z"
+          fill="#3a5a28" opacity="0.35"/>
+    <path d="M460,415 C456,422 462,428 468,424 C472,416 464,410 460,415 Z"
+          fill="#3a5a28" opacity="0.3"/>
+    <path d="M572,418 C578,424 574,430 568,426 C562,420 566,414 572,418 Z"
+          fill="#3a5a28" opacity="0.3"/>
+
+    <!-- Water surface highlights -->
+    <path d="M488,335 C498,328 514,332 508,342 C502,350 482,344 488,335 Z"
+          fill="rgba(255,255,255,0.18)"/>
+    <path d="M535,350 C545,344 554,352 548,360 C540,365 528,358 535,350 Z"
+          fill="rgba(255,255,255,0.12)"/>
+
+    <!-- Depth shading -->
+    <path d="M478,398 C500,404 536,406 558,398 C548,412 508,414 478,398 Z"
+          fill="#2a5a78" opacity="0.2"/>
+
+    <!-- Rocky outcrop -->
+    <path d="M525,368 C530,364 536,366 534,372 C530,376 522,373 525,368 Z"
+          fill="#4a6830" opacity="0.45"/>
+  </g>
+
+  <!-- Red territory marker line -->
+  <line x1="15" y1="296" x2="725" y2="296" stroke="#a03020" stroke-width="1.5" opacity="0.25"/>
+
+  <!-- Blue territory marker line -->
+  <line x1="15" y1="444" x2="725" y2="444" stroke="#2060a0" stroke-width="1.5" opacity="0.25"/>
+
+  <!-- Subtle grid lines -->
+  <g stroke="#000000" stroke-width="0.5" opacity="0.08">
+    <line x1="74" y1="0" x2="74" y2="740"/>
+    <line x1="148" y1="0" x2="148" y2="740"/>
+    <line x1="222" y1="0" x2="222" y2="740"/>
+    <line x1="296" y1="0" x2="296" y2="740"/>
+    <line x1="370" y1="0" x2="370" y2="740"/>
+    <line x1="444" y1="0" x2="444" y2="740"/>
+    <line x1="518" y1="0" x2="518" y2="740"/>
+    <line x1="592" y1="0" x2="592" y2="740"/>
+    <line x1="666" y1="0" x2="666" y2="740"/>
+    <line x1="0" y1="74" x2="740" y2="74"/>
+    <line x1="0" y1="148" x2="740" y2="148"/>
+    <line x1="0" y1="222" x2="740" y2="222"/>
+    <line x1="0" y1="296" x2="740" y2="296"/>
+    <line x1="0" y1="370" x2="740" y2="370"/>
+    <line x1="0" y1="444" x2="740" y2="444"/>
+    <line x1="0" y1="518" x2="740" y2="518"/>
+    <line x1="0" y1="592" x2="740" y2="592"/>
+    <line x1="0" y1="666" x2="740" y2="666"/>
+  </g>
+</svg>

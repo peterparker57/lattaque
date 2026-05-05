@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>L'Attaque</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app">
+  <div id="toolbar">
+    <button id="btn-new-game">New Game</button>
+    <button id="btn-settings">Settings</button>
+    <button id="btn-randomize" class="hidden">Randomize</button>
+    <button id="btn-save-layout" class="hidden">Save Layout</button>
+    <button id="btn-load-layout" class="hidden">Load Layout</button>
+    <button id="btn-start-game" class="hidden">Start Game</button>
+    <button id="btn-undo" disabled>Undo</button>
+    <button id="btn-music" title="Toggle Music">&#x1F50A;</button>
+    <span id="status-text">Click New Game to start</span>
+    <button id="btn-help" title="How to Play">Rules</button>
+  </div>
+  <div id="game-area">
+    <div class="side-panel left-panel">
+      <img src="general-blue.png" class="general-portrait" id="portrait-blue" alt="Blue General">
+      <div id="roster-blue" class="roster"></div>
+    </div>
+    <div id="board-container">
+      <div id="board"></div>
+    </div>
+    <div class="side-panel right-panel">
+      <img src="general-red.png" class="general-portrait" id="portrait-red" alt="Red General">
+      <div id="roster-red" class="roster"></div>
+    </div>
+  </div>
+  <div id="settings-modal" class="modal hidden">
+    <div class="modal-content">
+      <h2>Settings</h2>
+
+      <h3 class="settings-section">AI</h3>
+      <label>Difficulty: <span id="diff-label">10</span></label>
+      <input type="range" id="ai-difficulty" min="1" max="30" value="10">
+      <p style="font-size:11px;color:#888;margin-top:4px">Time = difficulty&sup2; &times; 10ms (10=1s, 20=4s, 30=9s)</p>
+
+      <h3 class="settings-section">Audio</h3>
+      <label class="settings-row">
+        <span>Music</span>
+        <div class="settings-controls">
+          <input type="checkbox" id="music-enabled" checked>
+          <input type="range" id="music-volume" min="0" max="100" value="15" class="volume-slider">
+          <span class="volume-label" id="music-vol-label">15%</span>
+        </div>
+      </label>
+      <label class="settings-row">
+        <span>Sound Effects</span>
+        <div class="settings-controls">
+          <input type="checkbox" id="sfx-enabled" checked>
+          <input type="range" id="sfx-volume" min="0" max="100" value="60" class="volume-slider">
+          <span class="volume-label" id="sfx-vol-label">60%</span>
+        </div>
+      </label>
+
+      <h3 class="settings-section">View</h3>
+      <div class="view-picker">
+        <button class="view-btn" data-view="2d" id="view-2d">2D (Top Down)</button>
+        <button class="view-btn" data-view="3d" id="view-3d">3D (Perspective)</button>
+      </div>
+
+      <h3 class="settings-section">Tile Design</h3>
+      <div id="tile-design-picker" class="tile-picker">
+        <div class="tile-option" data-tile="classic"><div class="tile-preview red hidden-piece tile-classic"><span class="tile-inner">&#x2753;</span></div><span>Classic</span></div>
+        <div class="tile-option" data-tile="shield"><div class="tile-preview red hidden-piece tile-shield"><span class="tile-inner">&#x1F6E1;&#xFE0F;</span></div><span>Shield</span></div>
+        <div class="tile-option" data-tile="stars"><div class="tile-preview red hidden-piece tile-stars"><span class="tile-inner">&#x2726;</span></div><span>Stars</span></div>
+        <div class="tile-option" data-tile="crosshatch"><div class="tile-preview red hidden-piece tile-crosshatch"><span class="tile-inner"></span></div><span>Hatch</span></div>
+        <div class="tile-option" data-tile="eagle"><div class="tile-preview red hidden-piece tile-eagle"><span class="tile-inner">&#x1F985;</span></div><span>Eagle</span></div>
+        <div class="tile-option" data-tile="skull"><div class="tile-preview red hidden-piece tile-skull"><span class="tile-inner">&#x2620;&#xFE0F;</span></div><span>Skull</span></div>
+      </div>
+
+      <h3 class="settings-section">Game</h3>
+      <label><input type="checkbox" id="two-squares" checked> Two Squares Rule</label>
+      <label><input type="checkbox" id="show-all"> Show All Pieces (debug)</label>
+
+      <div class="modal-buttons">
+        <button id="btn-settings-ok">OK</button>
+        <button id="btn-settings-cancel">Cancel</button>
+      </div>
+    </div>
+  </div>
+</div>
+  <div id="game-over-banner" class="hidden">
+    <div class="banner-content">
+      <div class="banner-icon" id="banner-icon"></div>
+      <div class="banner-title" id="banner-title"></div>
+      <div class="banner-subtitle" id="banner-subtitle"></div>
+      <button id="btn-play-again">Play Again</button>
+    </div>
+  </div>
+  <div id="color-modal" class="modal hidden">
+    <div class="modal-content">
+      <h2>Choose Your Side</h2>
+      <div class="color-picker">
+        <button id="btn-pick-blue" class="color-btn blue-btn">
+          <span class="color-icon">&#x1F6E1;&#xFE0F;</span>
+          <span class="color-label">Blue</span>
+          <span class="color-desc">Move second</span>
+        </button>
+        <button id="btn-pick-red" class="color-btn red-btn">
+          <span class="color-icon">&#x2694;&#xFE0F;</span>
+          <span class="color-label">Red</span>
+          <span class="color-desc">Move first</span>
+        </button>
+      </div>
+    </div>
+  </div>
+  <div id="layouts-modal" class="modal hidden">
+    <div class="modal-content">
+      <h2>Saved Layouts</h2>
+      <div id="layouts-list"></div>
+      <div class="modal-buttons">
+        <button id="btn-layouts-close">Close</button>
+      </div>
+    </div>
+  </div>
+  <div id="save-modal" class="modal hidden">
+    <div class="modal-content">
+      <h2>Save Layout</h2>
+      <label>Name: <input type="text" id="layout-name" placeholder="My Layout" style="width:100%;padding:6px;margin-top:4px;border-radius:4px;border:1px solid #555;background:#0a0a1a;color:#eee;font-size:14px"></label>
+      <div class="modal-buttons">
+        <button id="btn-save-confirm">Save</button>
+        <button id="btn-save-cancel">Cancel</button>
+      </div>
+    </div>
+  </div>
+  <div id="help-modal" class="modal hidden">
+    <div class="modal-content help-content">
+      <h2>How to Play L'Attaque</h2>
+
+      <h3>Objective</h3>
+      <p>Capture your opponent's <strong>Flag</strong> or eliminate all their movable pieces.</p>
+
+      <h3>Setup</h3>
+      <p>Place your 40 pieces on your side of the board (rows closest to you). Use <strong>Randomize</strong> for a quick layout, or drag pieces to arrange them yourself. Click <strong>Start Game</strong> when ready.</p>
+
+      <h3>Pieces &amp; Ranks</h3>
+      <table class="help-table">
+        <tr><th>Rank</th><th>Piece</th><th>Count</th><th>Special</th></tr>
+        <tr><td>10</td><td>Marshal</td><td>1</td><td>Highest rank; killed by Spy</td></tr>
+        <tr><td>9</td><td>General</td><td>1</td><td></td></tr>
+        <tr><td>8</td><td>Colonel</td><td>2</td><td></td></tr>
+        <tr><td>7</td><td>Major</td><td>3</td><td></td></tr>
+        <tr><td>6</td><td>Captain</td><td>4</td><td></td></tr>
+        <tr><td>5</td><td>Lieutenant</td><td>4</td><td></td></tr>
+        <tr><td>4</td><td>Sergeant</td><td>4</td><td></td></tr>
+        <tr><td>3</td><td>Miner</td><td>5</td><td>Can defuse Bombs</td></tr>
+        <tr><td>2</td><td>Scout</td><td>8</td><td>Moves any number of squares</td></tr>
+        <tr><td>1</td><td>Spy</td><td>1</td><td>Defeats Marshal if attacking</td></tr>
+        <tr><td>B</td><td>Bomb</td><td>6</td><td>Immovable; destroys attackers (except Miners)</td></tr>
+        <tr><td>F</td><td>Flag</td><td>1</td><td>Immovable; capture it to win</td></tr>
+      </table>
+
+      <h3>Movement</h3>
+      <ul>
+        <li>Click a piece, then click a highlighted square to move.</li>
+        <li>Most pieces move <strong>one square</strong> horizontally or vertically (no diagonals).</li>
+        <li><strong>Scouts</strong> (rank 2) can move any number of empty squares in a straight line.</li>
+        <li><strong>Bombs</strong> and the <strong>Flag</strong> cannot move.</li>
+        <li>The two lakes in the center are impassable.</li>
+      </ul>
+
+      <h3>Combat</h3>
+      <ul>
+        <li>Move onto an enemy piece to attack. <strong>Higher rank wins.</strong></li>
+        <li>Equal ranks: both pieces are removed.</li>
+        <li><strong>Spy</strong> defeats the <strong>Marshal</strong> only when the Spy initiates the attack.</li>
+        <li><strong>Miners</strong> defuse <strong>Bombs</strong> and survive. All other pieces are destroyed by Bombs.</li>
+      </ul>
+
+      <h3>Tips</h3>
+      <ul>
+        <li>Protect your Flag with Bombs.</li>
+        <li>Keep Miners alive &mdash; they're the only way to clear Bombs.</li>
+        <li>Use Scouts to probe enemy positions from a distance.</li>
+        <li>Guard your Marshal from the Spy.</li>
+      </ul>
+
+      <div class="modal-buttons">
+        <button id="btn-help-close">Got It</button>
+      </div>
+    </div>
+  </div>
+<script src="stratego.js"></script>
+</body>
+</html>
