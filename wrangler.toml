@@ -1,0 +1,35 @@
+# Stratego Online — Cloudflare Worker (serves the game + API + realtime server)
+#
+# One Worker does everything:
+#   - serves the static game files (index.html, stratego.js, style.css, images, audio)
+#     via the ASSETS binding — static paths are served directly by Cloudflare's CDN
+#   - handles /api/* in code (auth, matchmaking, WebSocket upgrade — added in later phases)
+#   - (later) hosts the GameRoom Durable Object and binds D1 for accounts/stats
+#
+# Free URL after `wrangler deploy`: https://stratego.<your-account>.workers.dev
+# Custom domain can be added later without changing this setup.
+
+name = "stratego"
+main = "src/index.js"
+compatibility_date = "2026-04-01"
+
+[assets]
+# Serve ONLY the public/ folder — it contains just the runtime game files, so the
+# repo's .git, src/, config, and unused source art can never be exposed to players.
+directory = "./public"
+binding = "ASSETS"
+
+# --- Added in later phases (left here as a roadmap) ---
+#
+# [[durable_objects.bindings]]
+# name = "GAME_ROOMS"
+# class_name = "GameRoom"
+#
+# [[migrations]]
+# tag = "v1"
+# new_sqlite_classes = ["GameRoom"]
+#
+# [[d1_databases]]
+# binding = "DB"
+# database_name = "stratego"
+# database_id = "<filled in by `wrangler d1 create stratego`>"

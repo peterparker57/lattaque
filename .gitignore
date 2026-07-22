@@ -3,3 +3,8 @@ Thumbs.db
 *.log
 .vscode/
 .idea/
+
+# Cloudflare / Node
+.wrangler/
+node_modules/
+.dev.vars
