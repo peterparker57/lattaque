@@ -20,6 +20,7 @@
     <button id="btn-music" title="Toggle Music">&#x1F50A;</button>
     <span id="status-text">Click New Game to start</span>
     <button id="btn-help" title="How to Play">Rules</button>
+    <button id="btn-leaderboard" title="Leaderboard">&#x1F3C6;</button>
     <div id="auth-bar" class="auth-bar"></div>
   </div>
   <div id="game-area">
@@ -229,8 +230,27 @@
       </div>
     </div>
   </div>
+  <div id="leaderboard-modal" class="modal hidden">
+    <div class="modal-content lb-content">
+      <h2>&#x1F3C6; Leaderboard</h2>
+      <div class="lb-head"><span class="lb-rank">#</span><span class="lb-name">Player</span><span class="lb-rating">Rating</span><span class="lb-wl">Record</span></div>
+      <div id="leaderboard-body" class="lb-body"></div>
+      <div class="modal-buttons"><button id="btn-leaderboard-close">Close</button></div>
+    </div>
+  </div>
+  <div id="profile-modal" class="modal hidden">
+    <div class="modal-content profile-content">
+      <h2 id="profile-name"></h2>
+      <div id="profile-body" class="profile-body"></div>
+      <div class="modal-buttons">
+        <button id="btn-profile-leaderboard">Leaderboard</button>
+        <button id="btn-profile-close">Close</button>
+      </div>
+    </div>
+  </div>
 <script type="module" src="stratego.js"></script>
 <script type="module" src="auth.js"></script>
 <script type="module" src="online.js"></script>
+<script type="module" src="stats.js"></script>
 </body>
 </html>

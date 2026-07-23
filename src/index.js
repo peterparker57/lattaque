@@ -77,8 +77,16 @@ export default {
         return stub.fetch(new Request(request, { headers }));
       }
 
+      // Leaderboard: top players by rating (public).
+      if (url.pathname === '/api/leaderboard' && request.method === 'GET') {
+        const rows = await env.DB.prepare(
+          'SELECT username, wins, losses, draws, rating FROM users ORDER BY rating DESC, wins DESC LIMIT 20',
+        ).all();
+        return Response.json({ players: rows.results || [] });
+      }
+
       if (url.pathname === '/api/health' && request.method === 'GET') {
-        return Response.json({ ok: true, service: 'lattaque', phase: 4, ts: Date.now() });
+        return Response.json({ ok: true, service: 'lattaque', phase: 5, ts: Date.now() });
       }
       // Proves the shared rules module runs server-side and agrees with the client.
       if (url.pathname === '/api/rules/selftest' && request.method === 'GET') {

@@ -235,6 +235,32 @@ export class GameRoom extends DurableObject {
       return;
     }
 
+    // Rematch: when both players agree, reset the room and swap colors.
+    if (msg.type === 'rematch') {
+      if (state.status !== 'gameover') return this.err(ws, 'no finished game to rematch');
+      state.rematch = state.rematch || {};
+      state.rematch[color] = true;
+      if (state.rematch[RED] && state.rematch[BLUE]) {
+        const oldRed = state.players[RED], oldBlue = state.players[BLUE];
+        state.players = {
+          [RED]: { userId: oldBlue.userId, username: oldBlue.username, ready: false },
+          [BLUE]: { userId: oldRed.userId, username: oldRed.username, ready: false },
+        };
+        state.board = null;
+        state.turn = RED;
+        state.winner = null;
+        state.lastCombat = null;
+        state.results = null;
+        state.recorded = false;
+        state.setups = null;
+        state.rematch = null;
+        state.status = 'setup';
+      }
+      await this.saveState(state);
+      await this.broadcastState();
+      return;
+    }
+
     // Make a move. The server is authoritative: it re-validates everything.
     if (msg.type === 'move') {
       if (state.status !== 'playing') return this.err(ws, 'the game is not in play');

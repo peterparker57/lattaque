@@ -271,7 +271,7 @@ class Game {
     ui.render();
   }
 
-  showOnlineGameOver(iWon) {
+  showOnlineGameOver(iWon, result) {
     this.status = 'gameover';
     if (iWon) { sfx.play(sfx.victory, 0.7); ui.startFireworks(8000); }
     setTimeout(() => {
@@ -279,9 +279,13 @@ class Game {
       const titleEl = document.getElementById('banner-title');
       titleEl.textContent = iWon ? 'VICTORY!' : 'DEFEAT';
       titleEl.className = 'banner-title ' + (iWon ? 'victory' : 'defeat');
-      document.getElementById('banner-subtitle').textContent = iWon
-        ? 'You captured the enemy flag!'
-        : 'Your flag was captured.';
+      let sub = iWon ? 'You captured the enemy flag!' : 'Your flag was captured.';
+      if (result && typeof result.delta === 'number') {
+        const sign = result.delta >= 0 ? '+' : '';
+        sub += `  Rating: ${result.after} (${sign}${result.delta})`;
+      }
+      document.getElementById('banner-subtitle').textContent = sub;
+      document.getElementById('btn-play-again').textContent = 'Rematch';
       document.getElementById('game-over-banner').classList.remove('hidden');
     }, 600);
   }
@@ -1748,7 +1752,11 @@ class UI {
     });
     document.getElementById('btn-play-again').addEventListener('click', () => {
       document.getElementById('game-over-banner').classList.add('hidden');
-      game.newGame();
+      if (game.mode === 'online') {
+        if (window.online) window.online.requestRematch();
+      } else {
+        game.newGame();
+      }
     });
     document.getElementById('btn-pick-blue').addEventListener('click', () => {
       game.initGame(BLUE);

@@ -6,7 +6,7 @@ import { Board, Piece, RANK, RED, BLUE, ROWS, COLS } from './game-core.js';
 
 const $ = (id) => document.getElementById(id);
 
-const net = { ws: null, code: null, myColor: null, wantOpen: false, started: false };
+const net = { ws: null, code: null, myColor: null, wantOpen: false, phase: null, lastCombatKey: null };
 
 // Reconstruct a Board from the server's filtered view. Hidden enemy pieces
 // (rank === null) become RANK.UNKNOWN so the existing UI renders them as '?'.
@@ -51,7 +51,7 @@ async function createMatch() {
   if (!res.ok) return setStatus(data.error || 'Could not create game.', true);
   net.code = data.code;
   net.myColor = data.color; // 0 = RED (creator moves first)
-  net.started = false;
+  net.phase = null;
   $('online-code-box').classList.remove('hidden');
   $('online-code-value').textContent = data.code;
   connect();
@@ -67,7 +67,7 @@ async function joinMatch() {
   if (!res.ok) return setStatus(data.error || 'Could not join game.', true);
   net.code = code;
   net.myColor = data.color; // 1 = BLUE
-  net.started = false;
+  net.phase = null;
   connect();
 }
 
@@ -92,14 +92,16 @@ function handleMessage(msg) {
   if (msg.type !== 'state') return;
 
   const g = window.game;
+  if (msg.you) net.myColor = msg.you.color; // authoritative — handles rematch color swap
   const red = msg.players.red ? msg.players.red.username : '—';
   const blue = msg.players.blue ? msg.players.blue.username : 'waiting…';
   setStatus(`Red: ${red}    Blue: ${blue}`);
 
   if (msg.status === 'setup') {
-    // Enter local army-arranging once both players are present.
-    if (!net.started && msg.players.red && msg.players.blue) {
-      net.started = true;
+    // Enter (or, for a rematch, re-enter) local army-arranging once both are present.
+    if (msg.players.red && msg.players.blue && net.phase !== 'setup') {
+      net.phase = 'setup';
+      net.lastCombatKey = null;
       setTimeout(closeModal, 400);
       g.initOnlineSetup(net.myColor);
     }
@@ -107,17 +109,46 @@ function handleMessage(msg) {
   }
 
   if (msg.status === 'playing' || msg.status === 'gameover') {
-    net.started = true;
     closeModal();
+    maybeAnimateCombat(msg.lastCombat);
     const board = boardFromView(msg.board);
     g.setOnlineBoard(board, msg.status === 'gameover' ? 'gameover' : 'playing', msg.turn);
     if (msg.status === 'playing') {
-      const mine = msg.turn === net.myColor;
-      window.ui.setStatus(mine ? 'Your turn — select a piece to move.' : "Opponent's turn…");
-    } else {
-      g.showOnlineGameOver(msg.winner === net.myColor);
+      net.phase = 'playing';
+      const oppColor = net.myColor === RED ? 'blue' : 'red';
+      const oppConnected = msg.players[oppColor] && msg.players[oppColor].connected;
+      if (!oppConnected) {
+        window.ui.setStatus('Opponent disconnected — waiting for them to reconnect…');
+      } else {
+        const mine = msg.turn === net.myColor;
+        window.ui.setStatus(mine ? 'Your turn — select a piece to move.' : "Opponent's turn…");
+      }
+    } else if (net.phase !== 'gameover') {
+      net.phase = 'gameover';
+      g.showOnlineGameOver(msg.winner === net.myColor, msg.result);
+      if (window.auth) window.auth.restore(); // refresh the rating shown in the toolbar
     }
   }
+}
+
+// Animate a combat that just happened (board is already post-combat). Keyed so a
+// resent/reconnect state doesn't replay the same fight.
+function maybeAnimateCombat(lc) {
+  if (!lc) return;
+  const key = `${lc.from.r},${lc.from.c}-${lc.to.r},${lc.to.c}-${lc.attacker.rank}-${lc.defender.rank}-${lc.result}`;
+  if (key === net.lastCombatKey) return;
+  net.lastCombatKey = key;
+  const record = {
+    attacker: { rank: lc.attacker.rank, color: lc.attacker.color },
+    defender: { rank: lc.defender.rank, color: lc.defender.color },
+    result: lc.result, fromR: lc.from.r, fromC: lc.from.c, toR: lc.to.r, toC: lc.to.c,
+  };
+  try { window.ui.playCombatAnimation(record); } catch { /* animation is best-effort */ }
+}
+
+function requestRematch() {
+  if (net.ws && net.ws.readyState === 1) net.ws.send(JSON.stringify({ type: 'rematch' }));
+  window.ui.setStatus('Rematch requested — waiting for your opponent…');
 }
 
 // Called by stratego.js when the player clicks Start Game in online mode.
@@ -169,7 +200,7 @@ function wire() {
   $('btn-online-join').addEventListener('click', joinMatch);
   $('btn-online-close').addEventListener('click', closeModal);
   $('online-join-code').addEventListener('keydown', (e) => { if (e.key === 'Enter') joinMatch(); });
-  window.online = { submitSetup, handleMoveClick };
+  window.online = { submitSetup, handleMoveClick, requestRematch };
 }
 
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', wire);
