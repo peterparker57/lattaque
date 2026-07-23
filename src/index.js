@@ -19,6 +19,10 @@ import {
   Piece, Board, generateSetup,
 } from '../public/game-core.js';
 import { handleAuth } from './auth.js';
+import { GameRoom } from './gameroom.js';
+
+// Durable Object classes must be exported from the Worker entry so the runtime can register them.
+export { GameRoom };
 
 export default {
   async fetch(request, env, ctx) {
@@ -30,6 +34,14 @@ export default {
         const res = await handleAuth(request, env, url.pathname);
         if (res) return res;
         return new Response('Not found', { status: 404 });
+      }
+
+      // Match WebSocket -> route the upgrade to the GameRoom Durable Object named by code.
+      const wsMatch = url.pathname.match(/^\/api\/match\/([A-Za-z0-9]{1,12})\/ws$/);
+      if (wsMatch) {
+        const code = wsMatch[1].toUpperCase();
+        const stub = env.GAME_ROOMS.get(env.GAME_ROOMS.idFromName(code));
+        return stub.fetch(request);
       }
       if (url.pathname === '/api/health' && request.method === 'GET') {
         return Response.json({ ok: true, service: 'lattaque', phase: 3, ts: Date.now() });

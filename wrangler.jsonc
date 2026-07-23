@@ -22,9 +22,14 @@
   // production uses this D1 database. Apply schema.sql with `wrangler d1 execute`.
   "d1_databases": [
     { "binding": "DB", "database_name": "lattaque", "database_id": "b004820e-0757-4231-b3ef-1a436b125c4e" }
-  ]
+  ],
 
-  // --- Added in later phases (roadmap) ---
-  // "durable_objects": { "bindings": [ { "name": "GAME_ROOMS", "class_name": "GameRoom" } ] },
-  // "migrations": [ { "tag": "v1", "new_sqlite_classes": ["GameRoom"] } ],
+  // Authoritative multiplayer (Phase 4): one GameRoom Durable Object per match.
+  // SQLite-backed (available on the Workers free plan) + hibernatable WebSockets.
+  "durable_objects": {
+    "bindings": [ { "name": "GAME_ROOMS", "class_name": "GameRoom" } ]
+  },
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["GameRoom"] }
+  ]
 }
