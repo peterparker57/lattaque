@@ -93,7 +93,10 @@ export class GameRoom extends DurableObject {
       turn: state.turn,
       winner: state.winner,
       lastCombat: state.lastCombat || null,
-      board: state.board ? buildPlayerView(deserializeBoard(state.board), forColor) : null,
+      // At gameover, reveal the whole board so both players see the opponent's army.
+      board: state.board
+        ? buildPlayerView(deserializeBoard(state.board), forColor, state.status === 'gameover')
+        : null,
     };
   }
 

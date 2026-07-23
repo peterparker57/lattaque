@@ -453,11 +453,11 @@ function deserializeBoard(data) {
 // pieces with rank ONLY if revealed through combat (piece.known), else rank=null
 // (hidden). Captured pieces are known to both sides. The client reconstructs a
 // Board from this, mapping rank=null enemies to RANK.UNKNOWN so the UI shows '?'.
-function buildPlayerView(board, forColor) {
+function buildPlayerView(board, forColor, revealAll = false) {
   const grid = board.grid.map((row) =>
     row.map((p) => {
       if (!p) return null;
-      const reveal = p.color === forColor || p.known;
+      const reveal = revealAll || p.color === forColor || p.known;
       return {
         color: p.color,
         id: p.id,

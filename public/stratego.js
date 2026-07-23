@@ -127,6 +127,7 @@ class Game {
     this.aiWorker = null;
     this.turn = RED; // Red goes first
     this.status = 'idle'; // idle, setup, playing, gameover
+    this.mode = 'ai';     // 'ai' (offline vs AI) or 'online' (multiplayer)
     this.selectedCell = null;
     this.validMoves = [];
     this.showAll = false;
@@ -156,6 +157,7 @@ class Game {
 
     this.playerColor = playerColor;
     this.aiColor = playerColor === BLUE ? RED : BLUE;
+    this.mode = 'ai';
 
     // Clean up old worker
     if (this.aiWorker) this.aiWorker.terminate();
@@ -231,10 +233,69 @@ class Game {
     }
   }
 
+  // --- Online multiplayer (driven by online.js / the server) ---
+  initOnlineSetup(myColor) {
+    document.getElementById('color-modal').classList.add('hidden');
+    document.getElementById('game-over-banner').classList.add('hidden');
+    this.mode = 'online';
+    this.playerColor = myColor;
+    this.aiColor = myColor === BLUE ? RED : BLUE;
+    if (this.aiWorker) { this.aiWorker.terminate(); this.aiWorker = null; }
+    this.board = new Board();
+    this.turn = RED;
+    this.status = 'setup';
+    this.selectedCell = null;
+    this.validMoves = [];
+    this.showAll = false;
+    this.randomizePlayerSetup(); // place only my own pieces to arrange
+    document.getElementById('btn-randomize').classList.remove('hidden');
+    document.getElementById('btn-save-layout').classList.remove('hidden');
+    document.getElementById('btn-load-layout').classList.remove('hidden');
+    document.getElementById('btn-start-game').classList.remove('hidden');
+    document.getElementById('btn-undo').disabled = true;
+    ui.render();
+    ui.setStatus('Arrange your army, then click Start Game to send it.');
+    music.start();
+  }
+
+  // online.js hands us a reconstructed Board once the server's view arrives.
+  setOnlineBoard(board, status, turn) {
+    this.board = board;
+    this.status = status;
+    this.turn = turn;
+    this.selectedCell = null;
+    this.validMoves = [];
+    if (status === 'gameover') this.showAll = true;
+    ['btn-randomize', 'btn-save-layout', 'btn-load-layout', 'btn-start-game']
+      .forEach((id) => document.getElementById(id).classList.add('hidden'));
+    ui.render();
+  }
+
+  showOnlineGameOver(iWon) {
+    this.status = 'gameover';
+    if (iWon) { sfx.play(sfx.victory, 0.7); ui.startFireworks(8000); }
+    setTimeout(() => {
+      document.getElementById('banner-icon').textContent = iWon ? '\u{1F3C6}' : '\u{1F6A9}';
+      const titleEl = document.getElementById('banner-title');
+      titleEl.textContent = iWon ? 'VICTORY!' : 'DEFEAT';
+      titleEl.className = 'banner-title ' + (iWon ? 'victory' : 'defeat');
+      document.getElementById('banner-subtitle').textContent = iWon
+        ? 'You captured the enemy flag!'
+        : 'Your flag was captured.';
+      document.getElementById('game-over-banner').classList.remove('hidden');
+    }, 600);
+  }
+
   handleCellClick(r, c) {
-    // Setup mode: swap player pieces
+    // Setup mode: swap player pieces (same for offline + online).
     if (this.status === 'setup') {
       this.handleSetupClick(r, c);
+      return;
+    }
+
+    // Online play: moves go to the server, not the local engine.
+    if (this.mode === 'online') {
+      if (window.online) window.online.handleMoveClick(r, c);
       return;
     }
 
@@ -1706,7 +1767,12 @@ class UI {
       }
     });
     document.getElementById('btn-start-game').addEventListener('click', () => {
-      if (game.status === 'setup') game.startGame();
+      if (game.status !== 'setup') return;
+      if (game.mode === 'online') {
+        if (window.online) window.online.submitSetup();
+      } else {
+        game.startGame();
+      }
     });
 
     // Save layout

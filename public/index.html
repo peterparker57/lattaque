@@ -10,6 +10,7 @@
 <div id="app">
   <div id="toolbar">
     <button id="btn-new-game">New Game</button>
+    <button id="btn-play-online">Play Online</button>
     <button id="btn-settings">Settings</button>
     <button id="btn-randomize" class="hidden">Randomize</button>
     <button id="btn-save-layout" class="hidden">Save Layout</button>
@@ -206,7 +207,30 @@
       <p id="auth-toggle" class="auth-toggle"></p>
     </div>
   </div>
+  <div id="online-modal" class="modal hidden">
+    <div class="modal-content online-content">
+      <h2>Play Online</h2>
+      <p class="online-sub">Create a game and share the code with a friend, or join with their code.</p>
+      <div class="online-row">
+        <button id="btn-online-create" class="auth-btn auth-btn-primary">Create Game</button>
+      </div>
+      <div id="online-code-box" class="online-code-box hidden">
+        Your code: <span id="online-code-value" class="online-code"></span>
+        <div class="online-hint">Share this with your opponent, then wait for them to join.</div>
+      </div>
+      <div class="online-divider">or</div>
+      <div class="online-row">
+        <input type="text" id="online-join-code" placeholder="Enter code" maxlength="12" class="online-input">
+        <button id="btn-online-join" class="auth-btn">Join</button>
+      </div>
+      <div id="online-status" class="online-status"></div>
+      <div class="modal-buttons">
+        <button id="btn-online-close">Close</button>
+      </div>
+    </div>
+  </div>
 <script type="module" src="stratego.js"></script>
 <script type="module" src="auth.js"></script>
+<script type="module" src="online.js"></script>
 </body>
 </html>
