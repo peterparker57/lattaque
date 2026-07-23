@@ -44,6 +44,13 @@ function validateSetup(pieces, color) {
   return null;
 }
 
+// Standard Elo update for a decisive result (K=32). Returns [newWinner, newLoser].
+function elo(Rw, Rl, K = 32) {
+  const eW = 1 / (1 + 10 ** ((Rl - Rw) / 400));
+  const eL = 1 / (1 + 10 ** ((Rw - Rl) / 400));
+  return [Math.round(Rw + K * (1 - eW)), Math.round(Rl + K * (0 - eL))];
+}
+
 const json = (obj, status = 200) =>
   new Response(JSON.stringify(obj), { status, headers: { 'Content-Type': 'application/json' } });
 
@@ -92,6 +99,7 @@ export class GameRoom extends DurableObject {
       players: { red: p(RED), blue: p(BLUE) },
       turn: state.turn,
       winner: state.winner,
+      result: forColor !== null && state.results ? state.results[forColor] || null : null,
       lastCombat: state.lastCombat || null,
       // At gameover, reveal the whole board so both players see the opponent's army.
       board: state.board
@@ -257,6 +265,7 @@ export class GameRoom extends DurableObject {
       if (winner === RED || winner === BLUE) {
         state.status = 'gameover';
         state.winner = winner;
+        await this.recordResult(state);
       } else {
         state.turn = state.turn === RED ? BLUE : RED;
       }
@@ -264,6 +273,33 @@ export class GameRoom extends DurableObject {
       await this.saveState(state);
       await this.broadcastState();
       return;
+    }
+  }
+
+  // Record a finished game to D1 exactly once: W/L counts + Elo ratings.
+  async recordResult(state) {
+    if (state.recorded) return;
+    state.recorded = true;
+    const wc = state.winner;
+    const lc = wc === RED ? BLUE : RED;
+    const wId = state.players[wc]?.userId;
+    const lId = state.players[lc]?.userId;
+    if (!wId || !lId) return;
+    try {
+      const wRow = await this.env.DB.prepare('SELECT rating FROM users WHERE id=?').bind(wId).first();
+      const lRow = await this.env.DB.prepare('SELECT rating FROM users WHERE id=?').bind(lId).first();
+      const Rw = wRow?.rating ?? 1000;
+      const Rl = lRow?.rating ?? 1000;
+      const [nRw, nRl] = elo(Rw, Rl);
+      await this.env.DB.prepare('UPDATE users SET wins=wins+1, rating=? WHERE id=?').bind(nRw, wId).run();
+      await this.env.DB.prepare('UPDATE users SET losses=losses+1, rating=? WHERE id=?').bind(nRl, lId).run();
+      state.results = {
+        [wc]: { won: true, before: Rw, after: nRw, delta: nRw - Rw },
+        [lc]: { won: false, before: Rl, after: nRl, delta: nRl - Rl },
+      };
+    } catch (e) {
+      // Don't let a stats write break the game result.
+      state.results = null;
     }
   }
 
