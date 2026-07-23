@@ -92,6 +92,7 @@ export class GameRoom extends DurableObject {
       players: { red: p(RED), blue: p(BLUE) },
       turn: state.turn,
       winner: state.winner,
+      lastCombat: state.lastCombat || null,
       board: state.board ? buildPlayerView(deserializeBoard(state.board), forColor) : null,
     };
   }
@@ -222,7 +223,45 @@ export class GameRoom extends DurableObject {
       await this.broadcastState();
       return;
     }
-    // move (P4e) handled here next.
+
+    // Make a move. The server is authoritative: it re-validates everything.
+    if (msg.type === 'move') {
+      if (state.status !== 'playing') return this.err(ws, 'the game is not in play');
+      if (state.turn !== color) return this.err(ws, 'not your turn');
+      const { fromR, fromC, toR, toC } = msg;
+      if (![fromR, fromC, toR, toC].every(Number.isInteger)) return this.err(ws, 'invalid move');
+
+      const board = deserializeBoard(state.board);
+      const piece = board.getPiece(fromR, fromC);
+      if (!piece || piece.color !== color) return this.err(ws, 'not your piece');
+      const legal = board.getValidMoves(fromR, fromC).some((m) => m.toR === toR && m.toC === toC);
+      if (!legal) return this.err(ws, 'illegal move');
+
+      const record = board.executeMove(fromR, fromC, toR, toC);
+      const winner = board.checkWin(); // RED, BLUE, or -1 (continue)
+
+      state.board = serializeBoard(board);
+      // Combat reveals both ranks to both players (that's how Stratego works).
+      state.lastCombat = record.result !== null
+        ? {
+            from: { r: fromR, c: fromC }, to: { r: toR, c: toC },
+            attacker: { color: record.attacker.color, rank: record.attacker.rank },
+            defender: { color: record.defender.color, rank: record.defender.rank },
+            result: record.result, // 1 attacker wins, 0 defender wins, -1 both die
+          }
+        : null;
+
+      if (winner === RED || winner === BLUE) {
+        state.status = 'gameover';
+        state.winner = winner;
+      } else {
+        state.turn = state.turn === RED ? BLUE : RED;
+      }
+
+      await this.saveState(state);
+      await this.broadcastState();
+      return;
+    }
   }
 
   err(ws, error) {
