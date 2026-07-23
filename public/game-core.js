@@ -415,9 +415,70 @@ function generateSetup(color) {
   return positions;
 }
 
+// --- Serialization (Durable Object storage + WebSocket transport) ---
+// The server stores/loads the FULL board (it knows every rank). Compact keys
+// keep the payload small.
+
+function serializePiece(p) {
+  if (!p) return null;
+  return { c: p.color, r: p.rank, id: p.id, k: p.known ? 1 : 0, m: p.moved ? 1 : 0, mc: p.moveCount };
+}
+function deserializePiece(o) {
+  if (!o) return null;
+  const p = new Piece(o.c, o.r, o.id);
+  p.known = !!o.k;
+  p.moved = !!o.m;
+  p.moveCount = o.mc || 0;
+  return p;
+}
+function serializeBoard(board) {
+  return {
+    grid: board.grid.map((row) => row.map(serializePiece)),
+    capturedRed: board.capturedRed.map(serializePiece),
+    capturedBlue: board.capturedBlue.map(serializePiece),
+    lastMove: board.lastMove || null,
+  };
+}
+function deserializeBoard(data) {
+  const b = new Board();
+  b.grid = data.grid.map((row) => row.map(deserializePiece));
+  b.capturedRed = (data.capturedRed || []).map(deserializePiece);
+  b.capturedBlue = (data.capturedBlue || []).map(deserializePiece);
+  b.lastMove = data.lastMove || null;
+  return b;
+}
+
+// --- Per-player filtered view (the anti-cheat core) ---
+// Returns what `forColor` is ALLOWED to see: own pieces at full rank, enemy
+// pieces with rank ONLY if revealed through combat (piece.known), else rank=null
+// (hidden). Captured pieces are known to both sides. The client reconstructs a
+// Board from this, mapping rank=null enemies to RANK.UNKNOWN so the UI shows '?'.
+function buildPlayerView(board, forColor) {
+  const grid = board.grid.map((row) =>
+    row.map((p) => {
+      if (!p) return null;
+      const reveal = p.color === forColor || p.known;
+      return {
+        color: p.color,
+        id: p.id,
+        known: !!p.known,
+        moved: !!p.moved,
+        rank: reveal ? p.rank : null, // null = hidden from this player
+      };
+    }),
+  );
+  return {
+    grid,
+    capturedRed: board.capturedRed.map((p) => ({ color: p.color, rank: p.rank })),
+    capturedBlue: board.capturedBlue.map((p) => ({ color: p.color, rank: p.rank })),
+    lastMove: board.lastMove || null,
+  };
+}
+
 // --- Exports (shared by the browser UI and the Cloudflare Worker) ---
 export {
   RED, BLUE, ROWS, COLS, RANK, RANK_NAMES, RANK_FULL_NAMES, RANK_ICONS, HIDDEN_ICON,
   PIECE_COUNTS, WATER_SQUARES, isWater,
   Piece, Board, generateSetup,
+  serializePiece, deserializePiece, serializeBoard, deserializeBoard, buildPlayerView,
 };

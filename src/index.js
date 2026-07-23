@@ -17,6 +17,7 @@
 import {
   RED, BLUE, RANK,
   Piece, Board, generateSetup,
+  serializeBoard, deserializeBoard, buildPlayerView,
 } from '../public/game-core.js';
 import { handleAuth } from './auth.js';
 import { GameRoom } from './gameroom.js';
@@ -100,10 +101,38 @@ function rulesSelfTest() {
   const flags = setup.filter(s => s.piece.rank === RANK.FLAG).length;
   check('generateSetup exactly one flag', flags, 1);
 
+  // --- serialize/deserialize round-trip ---
+  const sb = new Board();
+  const marshal = new Piece(RED, RANK.MARSHAL, 10);
+  const general = new Piece(BLUE, RANK.GENERAL, 20);
+  general.known = true; // pretend revealed via combat
+  sb.setPiece(2, 4, marshal);
+  sb.setPiece(6, 4, general);
+  const round = deserializeBoard(JSON.parse(JSON.stringify(serializeBoard(sb))));
+  check('serialize round-trip: piece rank', round.getPiece(2, 4).rank, RANK.MARSHAL);
+  check('serialize round-trip: known flag', round.getPiece(6, 4).known, true);
+
+  // --- anti-cheat: buildPlayerView hides enemy hidden ranks, shows own + revealed ---
+  const vb = new Board();
+  const redMarshal = new Piece(RED, RANK.MARSHAL, 11);      // RED's own, hidden
+  const blueSpy = new Piece(BLUE, RANK.SPY, 21);            // enemy, hidden
+  const blueMiner = new Piece(BLUE, RANK.MINER, 22);        // enemy, revealed
+  blueMiner.known = true;
+  vb.setPiece(1, 1, redMarshal);
+  vb.setPiece(8, 8, blueSpy);
+  vb.setPiece(8, 7, blueMiner);
+  const redView = buildPlayerView(vb, RED);
+  check('view: RED sees own marshal rank', redView.grid[1][1].rank, RANK.MARSHAL);
+  check('view: RED CANNOT see hidden enemy spy rank', redView.grid[8][8].rank, null);
+  check('view: RED sees revealed enemy miner rank', redView.grid[8][7].rank, RANK.MINER);
+  const blueView = buildPlayerView(vb, BLUE);
+  check('view: BLUE sees own spy rank', blueView.grid[8][8].rank, RANK.SPY);
+  check('view: BLUE CANNOT see hidden enemy marshal rank', blueView.grid[1][1].rank, null);
+
   const passed = checks.filter(c => c.pass).length;
   return {
     ok: passed === checks.length,
-    phase: 2,
+    phase: 4,
     passed,
     total: checks.length,
     ranAt: Date.now(),
