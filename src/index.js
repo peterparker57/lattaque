@@ -18,14 +18,21 @@ import {
   RED, BLUE, RANK,
   Piece, Board, generateSetup,
 } from '../public/game-core.js';
+import { handleAuth } from './auth.js';
 
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
 
     if (url.pathname.startsWith('/api/')) {
+      // Accounts: /api/auth/signup|login|logout|me (returns null if not an auth route).
+      if (url.pathname.startsWith('/api/auth/')) {
+        const res = await handleAuth(request, env, url.pathname);
+        if (res) return res;
+        return new Response('Not found', { status: 404 });
+      }
       if (url.pathname === '/api/health' && request.method === 'GET') {
-        return Response.json({ ok: true, service: 'stratego', phase: 2, ts: Date.now() });
+        return Response.json({ ok: true, service: 'lattaque', phase: 3, ts: Date.now() });
       }
       // Proves the shared rules module runs server-side and agrees with the client.
       if (url.pathname === '/api/rules/selftest' && request.method === 'GET') {

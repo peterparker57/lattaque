@@ -19,6 +19,7 @@
     <button id="btn-music" title="Toggle Music">&#x1F50A;</button>
     <span id="status-text">Click New Game to start</span>
     <button id="btn-help" title="How to Play">Rules</button>
+    <div id="auth-bar" class="auth-bar"></div>
   </div>
   <div id="game-area">
     <div class="side-panel left-panel">
@@ -188,6 +189,24 @@
       </div>
     </div>
   </div>
+  <div id="auth-modal" class="modal hidden">
+    <div class="modal-content auth-content">
+      <h2 id="auth-title">Log In</h2>
+      <div id="auth-error" class="auth-error hidden"></div>
+      <label>Username
+        <input type="text" id="auth-username" autocomplete="username" maxlength="20" placeholder="3-20 letters, numbers, _ -">
+      </label>
+      <label>Password
+        <input type="password" id="auth-password" autocomplete="current-password" placeholder="at least 8 characters">
+      </label>
+      <div class="modal-buttons">
+        <button id="btn-auth-submit">Log In</button>
+        <button id="btn-auth-cancel">Cancel</button>
+      </div>
+      <p id="auth-toggle" class="auth-toggle"></p>
+    </div>
+  </div>
 <script type="module" src="stratego.js"></script>
+<script type="module" src="auth.js"></script>
 </body>
 </html>

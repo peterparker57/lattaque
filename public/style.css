@@ -1157,3 +1157,32 @@ body::before {
 #btn-load-layout {
   background: #2e86c1 !important;
 }
+
+/* --- Auth UI (accounts) --- */
+.auth-bar { display: flex; align-items: center; gap: 8px; }
+.auth-btn {
+  padding: 6px 12px; border: none; border-radius: 4px;
+  background: #0f3460; color: #eee; cursor: pointer; font-size: 13px;
+  transition: background 0.2s;
+}
+.auth-btn:hover { background: #1a5276; }
+.auth-btn-primary { background: #1a5276; }
+.auth-btn-primary:hover { background: #2471a3; }
+.auth-user { font-size: 13px; color: #cfe3f5; display: inline-flex; align-items: center; gap: 6px; }
+.auth-rating {
+  background: #0f3460; color: #9ec9ec; font-weight: bold;
+  border-radius: 10px; padding: 1px 8px; font-size: 12px;
+}
+.auth-content { min-width: 320px; }
+.auth-content input[type="text"], .auth-content input[type="password"] {
+  width: 100%; padding: 8px; margin-top: 4px; box-sizing: border-box;
+  border-radius: 4px; border: 1px solid #555; background: #0a0a1a; color: #eee; font-size: 14px;
+}
+.auth-error {
+  background: #4a1522; color: #ffb3c0; border: 1px solid #7a2233;
+  border-radius: 4px; padding: 8px 10px; font-size: 13px; margin-bottom: 8px;
+}
+.auth-error.hidden { display: none; }
+.auth-toggle { font-size: 13px; color: #aaa; margin-top: 14px; text-align: center; }
+.auth-toggle a { color: #5dade2; text-decoration: none; }
+.auth-toggle a:hover { text-decoration: underline; }
