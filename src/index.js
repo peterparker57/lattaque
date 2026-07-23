@@ -19,7 +19,7 @@ import {
   Piece, Board, generateSetup,
   serializeBoard, deserializeBoard, buildPlayerView,
 } from '../public/game-core.js';
-import { handleAuth } from './auth.js';
+import { handleAuth, getSessionUser } from './auth.js';
 import { GameRoom } from './gameroom.js';
 
 // Durable Object classes must be exported from the Worker entry so the runtime can register them.
@@ -37,15 +37,48 @@ export default {
         return new Response('Not found', { status: 404 });
       }
 
-      // Match WebSocket -> route the upgrade to the GameRoom Durable Object named by code.
+      // --- Matchmaking (all require a logged-in user) ---
+
+      // Create a match: allocate a unique room code and seed the GameRoom (creator = RED).
+      if (url.pathname === '/api/match/create' && request.method === 'POST') {
+        const user = await getSessionUser(env, request);
+        if (!user) return Response.json({ error: 'login required' }, { status: 401 });
+        for (let attempt = 0; attempt < 6; attempt++) {
+          const code = genRoomCode();
+          const stub = env.GAME_ROOMS.get(env.GAME_ROOMS.idFromName(code));
+          const res = await stub.fetch(doReq('create', { userId: user.id, username: user.username, code }));
+          if (res.status === 200) return Response.json({ code, color: 0 });
+          if (res.status === 409) continue; // code collision — try another
+          return Response.json({ error: 'could not create match' }, { status: 500 });
+        }
+        return Response.json({ error: 'could not allocate a room code' }, { status: 503 });
+      }
+
+      // Join a match by code.
+      const joinMatch = url.pathname.match(/^\/api\/match\/([A-Za-z0-9]{1,12})\/join$/);
+      if (joinMatch && request.method === 'POST') {
+        const user = await getSessionUser(env, request);
+        if (!user) return Response.json({ error: 'login required' }, { status: 401 });
+        const code = joinMatch[1].toUpperCase();
+        const stub = env.GAME_ROOMS.get(env.GAME_ROOMS.idFromName(code));
+        return stub.fetch(doReq('join', { userId: user.id, username: user.username, code }));
+      }
+
+      // Match WebSocket -> resolve the user, then route the upgrade to the GameRoom DO.
       const wsMatch = url.pathname.match(/^\/api\/match\/([A-Za-z0-9]{1,12})\/ws$/);
       if (wsMatch) {
+        const user = await getSessionUser(env, request);
+        if (!user) return new Response('login required', { status: 401 });
         const code = wsMatch[1].toUpperCase();
         const stub = env.GAME_ROOMS.get(env.GAME_ROOMS.idFromName(code));
-        return stub.fetch(request);
+        const headers = new Headers(request.headers);
+        headers.set('X-User-Id', String(user.id));
+        headers.set('X-User-Name', user.username);
+        return stub.fetch(new Request(request, { headers }));
       }
+
       if (url.pathname === '/api/health' && request.method === 'GET') {
-        return Response.json({ ok: true, service: 'lattaque', phase: 3, ts: Date.now() });
+        return Response.json({ ok: true, service: 'lattaque', phase: 4, ts: Date.now() });
       }
       // Proves the shared rules module runs server-side and agrees with the client.
       if (url.pathname === '/api/rules/selftest' && request.method === 'GET') {
@@ -59,6 +92,24 @@ export default {
     return new Response('Not found', { status: 404 });
   },
 };
+
+// Room code: 5 chars from an unambiguous alphabet (no I/O/0/1) — easy to share verbally.
+function genRoomCode() {
+  const A = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  const bytes = crypto.getRandomValues(new Uint8Array(5));
+  let s = '';
+  for (let i = 0; i < 5; i++) s += A[bytes[i] % A.length];
+  return s;
+}
+
+// Build an internal HTTP request carrying a JSON command to a GameRoom Durable Object.
+function doReq(cmd, body) {
+  return new Request(`https://gameroom/${cmd}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+}
 
 // Exercise game-core.js inside the Worker runtime and report parity results.
 // If this passes on the server, the authoritative GameRoom can trust the same
