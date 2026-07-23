@@ -15,7 +15,7 @@
   // Worker code handles /api/*; asset paths are served directly by the CDN.
   "assets": {
     "directory": "./public",
-    "binding": "ASSETS"
+    "not_found_handling": "single-page-application"
   },
 
   // Accounts / stats (Phase 3+). `wrangler dev` uses a local SQLite mirror;

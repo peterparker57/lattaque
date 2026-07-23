@@ -41,7 +41,9 @@ export default {
       return new Response('Not found', { status: 404 });
     }
 
-    return env.ASSETS.fetch(request);
+    // Static assets are served by the assets layer before this handler runs.
+    // Reaching here means no asset matched a non-API path.
+    return new Response('Not found', { status: 404 });
   },
 };
 
