@@ -10,10 +10,39 @@
 // connect + reconnect + broadcast). Setup (P4d) and moves (P4e) extend this.
 
 import { DurableObject } from 'cloudflare:workers';
-import { buildPlayerView, deserializeBoard } from '../public/game-core.js';
+import {
+  Piece, Board, PIECE_COUNTS,
+  buildPlayerView, serializeBoard, deserializeBoard,
+} from '../public/game-core.js';
 
 const RED = 0;
 const BLUE = 1;
+
+// Each side sets up on its own back rows (rows 4-5 are the middle/lakes).
+const ZONE = { [RED]: [0, 3], [BLUE]: [6, 9] };
+
+// Validate a submitted army: exactly the right pieces, all inside the player's
+// own zone, one per square. Returns an error string, or null if valid.
+function validateSetup(pieces, color) {
+  if (!Array.isArray(pieces)) return 'setup must be a list';
+  if (pieces.length !== 40) return `expected 40 pieces, got ${pieces.length}`;
+  const [minR, maxR] = ZONE[color];
+  const counts = {};
+  const seen = new Set();
+  for (const p of pieces) {
+    if (!Number.isInteger(p.rank) || !(p.rank in PIECE_COUNTS)) return 'invalid piece rank';
+    if (!Number.isInteger(p.r) || !Number.isInteger(p.c)) return 'invalid position';
+    if (p.r < minR || p.r > maxR || p.c < 0 || p.c > 9) return 'piece outside your zone';
+    const key = p.r * 10 + p.c;
+    if (seen.has(key)) return 'two pieces on the same square';
+    seen.add(key);
+    counts[p.rank] = (counts[p.rank] || 0) + 1;
+  }
+  for (const [rank, n] of Object.entries(PIECE_COUNTS)) {
+    if ((counts[rank] || 0) !== n) return 'wrong piece counts';
+  }
+  return null;
+}
 
 const json = (obj, status = 200) =>
   new Response(JSON.stringify(obj), { status, headers: { 'Content-Type': 'application/json' } });
@@ -163,7 +192,41 @@ export class GameRoom extends DurableObject {
       ws.send(JSON.stringify(this.stateMessage(state, color)));
       return;
     }
-    // setup (P4d) and move (P4e) commands handled here next.
+
+    // Submit your army during setup.
+    if (msg.type === 'setup') {
+      if (state.status !== 'setup') return this.err(ws, 'not in setup phase');
+      if (state.players[color].ready) return this.err(ws, 'you already submitted your setup');
+      const invalid = validateSetup(msg.pieces, color);
+      if (invalid) return this.err(ws, invalid);
+
+      state.setups = state.setups || { [RED]: null, [BLUE]: null };
+      state.setups[color] = msg.pieces.map((p) => ({ rank: p.rank, r: p.r, c: p.c }));
+      state.players[color].ready = true;
+
+      // Both armies in -> build the authoritative board and start play (RED first).
+      if (state.players[RED].ready && state.players[BLUE].ready) {
+        const board = new Board();
+        let id = 0;
+        for (const s of state.setups[RED]) board.setPiece(s.r, s.c, new Piece(RED, s.rank, id++));
+        id = 40;
+        for (const s of state.setups[BLUE]) board.setPiece(s.r, s.c, new Piece(BLUE, s.rank, id++));
+        state.board = serializeBoard(board);
+        state.status = 'playing';
+        state.turn = RED;
+        delete state.setups;
+      }
+
+      await this.saveState(state);
+      ws.send(JSON.stringify({ type: 'setup_ok' }));
+      await this.broadcastState();
+      return;
+    }
+    // move (P4e) handled here next.
+  }
+
+  err(ws, error) {
+    try { ws.send(JSON.stringify({ type: 'error', error })); } catch { /* closing */ }
   }
 
   async webSocketClose(ws, code, reason) {
