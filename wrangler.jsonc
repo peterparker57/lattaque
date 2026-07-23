@@ -1,0 +1,25 @@
+{
+  // Stratego / L'Attaque — single Cloudflare Worker config.
+  // One Worker: serves the static game (public/) AND runs the API AND (later)
+  // hosts the GameRoom Durable Object + binds D1 for accounts/stats.
+  // Free URL after deploy: https://lattaque.<account>.workers.dev
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "lattaque",
+  "main": "src/index.js",
+  // Kept <= 2026-04-22 so `wrangler dev` runs on the installed wrangler 4.83 runtime.
+  "compatibility_date": "2026-04-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": { "enabled": true },
+
+  // Static game files. Only public/ is served; repo .git/src/config stay private.
+  // Worker code handles /api/*; asset paths are served directly by the CDN.
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS"
+  }
+
+  // --- Added in later phases (roadmap) ---
+  // "durable_objects": { "bindings": [ { "name": "GAME_ROOMS", "class_name": "GameRoom" } ] },
+  // "migrations": [ { "tag": "v1", "new_sqlite_classes": ["GameRoom"] } ],
+  // "d1_databases": [ { "binding": "DB", "database_name": "lattaque", "database_id": "<from `wrangler d1 create lattaque`>" } ]
+}
