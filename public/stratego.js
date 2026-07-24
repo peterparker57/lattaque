@@ -259,13 +259,20 @@ class Game {
   }
 
   // online.js hands us a reconstructed Board once the server's view arrives.
-  setOnlineBoard(board, status, turn) {
+  // Self-sufficient so a mid-game refresh (which skips initOnlineSetup) still
+  // restores online mode + the correct player color.
+  setOnlineBoard(board, status, turn, myColor) {
+    this.mode = 'online';
+    if (myColor === RED || myColor === BLUE) {
+      this.playerColor = myColor;
+      this.aiColor = myColor === BLUE ? RED : BLUE;
+    }
     this.board = board;
     this.status = status;
     this.turn = turn;
     this.selectedCell = null;
     this.validMoves = [];
-    if (status === 'gameover') this.showAll = true;
+    this.showAll = status === 'gameover'; // reveal the opponent's army once the game ends
     ['btn-randomize', 'btn-save-layout', 'btn-load-layout', 'btn-start-game']
       .forEach((id) => document.getElementById(id).classList.add('hidden'));
     ui.render();

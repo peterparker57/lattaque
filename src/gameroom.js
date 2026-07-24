@@ -62,6 +62,7 @@ export class GameRoom extends DurableObject {
     return this._state;
   }
   async saveState(state) {
+    state.version = (state.version || 0) + 1; // monotonic — clients ignore stale/duplicate states
     this._state = state;
     await this.ctx.storage.put('state', state);
   }
@@ -93,6 +94,7 @@ export class GameRoom extends DurableObject {
         : null;
     return {
       type: 'state',
+      version: state.version || 0,
       status: state.status,
       code: state.code,
       you: forColor === null ? null : { color: forColor, username: state.players[forColor]?.username },

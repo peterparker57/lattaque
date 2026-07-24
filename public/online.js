@@ -6,7 +6,7 @@ import { Board, Piece, RANK, RED, BLUE, ROWS, COLS } from './game-core.js';
 
 const $ = (id) => document.getElementById(id);
 
-const net = { ws: null, code: null, myColor: null, wantOpen: false, phase: null, lastCombatKey: null };
+const net = { ws: null, code: null, myColor: null, wantOpen: false, phase: null, lastCombatKey: null, version: null, lastRecv: 0 };
 
 // Reconstruct a Board from the server's filtered view. Hidden enemy pieces
 // (rank === null) become RANK.UNKNOWN so the existing UI renders them as '?'.
@@ -52,6 +52,7 @@ async function createMatch() {
   net.code = data.code;
   net.myColor = data.color; // 0 = RED (creator moves first)
   net.phase = null;
+  net.version = null;
   $('online-code-box').classList.remove('hidden');
   $('online-code-value').textContent = data.code;
   connect();
@@ -68,28 +69,75 @@ async function joinMatch() {
   net.code = code;
   net.myColor = data.color; // 1 = BLUE
   net.phase = null;
+  net.version = null;
   connect();
 }
 
+const MATCH_KEY = 'lattaque-match';
+let reconnectTimer = null;
+let heartbeat = null;
+
+function saveMatch() { try { sessionStorage.setItem(MATCH_KEY, net.code || ''); } catch { /* private mode */ } }
+function clearMatch() { try { sessionStorage.removeItem(MATCH_KEY); } catch { /* ignore */ } }
+
+function scheduleReconnect(delay = 1200) {
+  if (reconnectTimer || !net.wantOpen) return;
+  reconnectTimer = setTimeout(() => { reconnectTimer = null; connect(); }, delay);
+}
+
+// Mobile browsers (esp. iOS Safari) suspend WebSockets when backgrounded and can
+// silently drop messages. Periodically resync so a missed broadcast is recovered
+// within a few seconds, and reconnect if the socket has gone quiet (half-open).
+function startHeartbeat() {
+  stopHeartbeat();
+  net.lastRecv = Date.now();
+  heartbeat = setInterval(() => {
+    if (!net.wantOpen) return;
+    const ws = net.ws;
+    if (ws && ws.readyState === 1) {
+      try { ws.send(JSON.stringify({ type: 'sync' })); } catch { /* dead */ }
+      if (Date.now() - (net.lastRecv || 0) > 22000) { try { ws.close(); } catch { /* ignore */ } }
+    } else if (!ws || ws.readyState === 3) {
+      scheduleReconnect(500);
+    }
+  }, 9000);
+}
+function stopHeartbeat() { if (heartbeat) { clearInterval(heartbeat); heartbeat = null; } }
+
 function connect() {
+  if (!net.code) return;
   net.wantOpen = true;
+  saveMatch();
+  if (net.ws && (net.ws.readyState === 0 || net.ws.readyState === 1)) return; // already connecting/open
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
   const ws = new WebSocket(`${proto}://${location.host}/api/match/${net.code}/ws`);
   net.ws = ws;
-  ws.addEventListener('open', () => setStatus('Connected. Waiting for the game…'));
-  ws.addEventListener('message', (ev) => handleMessage(JSON.parse(ev.data)));
+  ws.addEventListener('open', () => { net.lastRecv = Date.now(); startHeartbeat(); });
+  ws.addEventListener('message', (ev) => { net.lastRecv = Date.now(); handleMessage(JSON.parse(ev.data)); });
   ws.addEventListener('close', () => {
     if (!net.wantOpen) return;
     setStatus('Connection lost — reconnecting…', true);
-    setTimeout(connect, 1500);
+    scheduleReconnect();
   });
   ws.addEventListener('error', () => {});
 }
 
 function handleMessage(msg) {
-  if (msg.type === 'error') { setStatus(msg.error, true); return; }
+  if (msg.type === 'error') {
+    // The match no longer knows us (expired/invalid) — stop trying to rejoin it.
+    if (/not a player/i.test(msg.error)) { net.wantOpen = false; clearMatch(); net.code = null; }
+    setStatus(msg.error, true);
+    return;
+  }
   if (msg.type === 'setup_ok') { window.ui && window.ui.setStatus('Army sent. Waiting for your opponent…'); return; }
   if (msg.type !== 'state') return;
+
+  // Ignore stale/duplicate snapshots (e.g. heartbeat resyncs) — keeps the board
+  // and any in-progress piece selection from flickering/resetting.
+  if (msg.version != null) {
+    if (net.version != null && msg.version <= net.version) return;
+    net.version = msg.version;
+  }
 
   const g = window.game;
   if (msg.you) net.myColor = msg.you.color; // authoritative — handles rematch color swap
@@ -112,7 +160,7 @@ function handleMessage(msg) {
     closeModal();
     maybeAnimateCombat(msg.lastCombat);
     const board = boardFromView(msg.board);
-    g.setOnlineBoard(board, msg.status === 'gameover' ? 'gameover' : 'playing', msg.turn);
+    g.setOnlineBoard(board, msg.status === 'gameover' ? 'gameover' : 'playing', msg.turn, net.myColor);
     if (msg.status === 'playing') {
       net.phase = 'playing';
       const oppColor = net.myColor === RED ? 'blue' : 'red';
@@ -201,6 +249,20 @@ function wire() {
   $('btn-online-close').addEventListener('click', closeModal);
   $('online-join-code').addEventListener('keydown', (e) => { if (e.key === 'Enter') joinMatch(); });
   window.online = { submitSetup, handleMoveClick, requestRematch };
+
+  // When the tab becomes visible again (e.g. iPad woken/unlocked), force a resync —
+  // the server resends current state on connect, and sync pulls it on a live socket.
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState !== 'visible' || !net.wantOpen) return;
+    if (net.ws && net.ws.readyState === 1) { try { net.ws.send(JSON.stringify({ type: 'sync' })); } catch { /* ignore */ } }
+    else scheduleReconnect(200);
+  });
+  window.addEventListener('online', () => { if (net.wantOpen) scheduleReconnect(200); });
+
+  // Rejoin an in-progress match after a refresh / accidental reload.
+  let saved = null;
+  try { saved = sessionStorage.getItem(MATCH_KEY); } catch { /* ignore */ }
+  if (saved) { net.code = saved; net.phase = null; connect(); }
 }
 
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', wire);
