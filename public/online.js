@@ -6,7 +6,7 @@ import { Board, Piece, RANK, RED, BLUE, ROWS, COLS } from './game-core.js';
 
 const $ = (id) => document.getElementById(id);
 
-const net = { ws: null, code: null, myColor: null, wantOpen: false, phase: null, lastCombatKey: null, version: null, lastRecv: 0 };
+const net = { ws: null, code: null, myColor: null, wantOpen: false, phase: null, lastCombatKey: null, version: null, lastRecv: 0, pendingSince: 0 };
 
 // Reconstruct a Board from the server's filtered view. Hidden enemy pieces
 // (rank === null) become RANK.UNKNOWN so the existing UI renders them as '?'.
@@ -85,6 +85,16 @@ function scheduleReconnect(delay = 1200) {
   reconnectTimer = setTimeout(() => { reconnectTimer = null; connect(); }, delay);
 }
 
+// Pull the latest state now — over the live socket if we have one, else reconnect
+// (the server resends full state on connect).
+function requestSync() {
+  if (net.ws && net.ws.readyState === 1) {
+    try { net.ws.send(JSON.stringify({ type: 'sync' })); } catch { /* dead socket */ }
+  } else {
+    scheduleReconnect(200);
+  }
+}
+
 // Mobile browsers (esp. iOS Safari) suspend WebSockets when backgrounded and can
 // silently drop messages. Periodically resync so a missed broadcast is recovered
 // within a few seconds, and reconnect if the socket has gone quiet (half-open).
@@ -96,11 +106,13 @@ function startHeartbeat() {
     const ws = net.ws;
     if (ws && ws.readyState === 1) {
       try { ws.send(JSON.stringify({ type: 'sync' })); } catch { /* dead */ }
-      if (Date.now() - (net.lastRecv || 0) > 22000) { try { ws.close(); } catch { /* ignore */ } }
+      // No traffic for a while on an "open" socket = zombie (common after iOS
+      // suspend). Close it; the close handler reconnects and state is resent.
+      if (Date.now() - (net.lastRecv || 0) > 12000) { try { ws.close(); } catch { /* ignore */ } }
     } else if (!ws || ws.readyState === 3) {
       scheduleReconnect(500);
     }
-  }, 9000);
+  }, 5000);
 }
 function stopHeartbeat() { if (heartbeat) { clearInterval(heartbeat); heartbeat = null; } }
 
@@ -125,19 +137,32 @@ function connect() {
 function handleMessage(msg) {
   if (msg.type === 'error') {
     // The match no longer knows us (expired/invalid) — stop trying to rejoin it.
-    if (/not a player/i.test(msg.error)) { net.wantOpen = false; clearMatch(); net.code = null; }
-    setStatus(msg.error, true);
+    if (/not a player/i.test(msg.error)) {
+      net.wantOpen = false; clearMatch(); net.code = null;
+      setStatus(msg.error, true);
+      return;
+    }
+    // In-game errors (e.g. a rejected move) must show on the GAME screen — the
+    // lobby modal is closed — and usually mean we're stale: pull fresh state.
+    if (net.phase === 'playing' && window.ui) {
+      window.ui.setStatus(msg.error + ' — syncing…');
+      requestSync();
+    } else {
+      setStatus(msg.error, true);
+    }
     return;
   }
   if (msg.type === 'setup_ok') { window.ui && window.ui.setStatus('Army sent. Waiting for your opponent…'); return; }
   if (msg.type !== 'state') return;
 
-  // Ignore stale/duplicate snapshots (e.g. heartbeat resyncs) — keeps the board
-  // and any in-progress piece selection from flickering/resetting.
-  if (msg.version != null) {
-    if (net.version != null && msg.version <= net.version) return;
-    net.version = msg.version;
-  }
+  // Version discipline: drop strictly-older snapshots; an EQUAL version (heartbeat
+  // echo) refreshes only the status line — never the board, so an in-progress
+  // piece selection survives; a NEWER version applies fully.
+  const v = msg.version;
+  if (v != null && net.version != null && v < net.version) return;
+  const isNew = v == null || net.version == null || v > net.version;
+  if (v != null) net.version = v;
+  if (isNew) net.pendingSince = 0; // our sent move (if any) is confirmed
 
   const g = window.game;
   if (msg.you) net.myColor = msg.you.color; // authoritative — handles rematch color swap
@@ -158,24 +183,33 @@ function handleMessage(msg) {
 
   if (msg.status === 'playing' || msg.status === 'gameover') {
     closeModal();
+    if (!isNew) {
+      // Same snapshot we already rendered (heartbeat echo) — refresh only the
+      // status line (opponent connected flags can change without a version bump).
+      if (msg.status === 'playing' && net.phase === 'playing') updateTurnStatus(msg);
+      return;
+    }
     maybeAnimateCombat(msg.lastCombat);
     const board = boardFromView(msg.board);
     g.setOnlineBoard(board, msg.status === 'gameover' ? 'gameover' : 'playing', msg.turn, net.myColor);
     if (msg.status === 'playing') {
       net.phase = 'playing';
-      const oppColor = net.myColor === RED ? 'blue' : 'red';
-      const oppConnected = msg.players[oppColor] && msg.players[oppColor].connected;
-      if (!oppConnected) {
-        window.ui.setStatus('Opponent disconnected — waiting for them to reconnect…');
-      } else {
-        const mine = msg.turn === net.myColor;
-        window.ui.setStatus(mine ? 'Your turn — select a piece to move.' : "Opponent's turn…");
-      }
+      updateTurnStatus(msg);
     } else if (net.phase !== 'gameover') {
       net.phase = 'gameover';
       g.showOnlineGameOver(msg.winner === net.myColor, msg.result);
       if (window.auth) window.auth.restore(); // refresh the rating shown in the toolbar
     }
+  }
+}
+
+function updateTurnStatus(msg) {
+  const opp = msg.players[net.myColor === RED ? 'blue' : 'red'];
+  if (!opp || !opp.connected) {
+    window.ui.setStatus('Opponent disconnected — waiting for them to reconnect…');
+  } else {
+    const mine = msg.turn === net.myColor;
+    window.ui.setStatus(mine ? 'Your turn — select a piece to move.' : "Opponent's turn…");
   }
 }
 
@@ -223,7 +257,19 @@ function handleMoveClick(r, c) {
   if (g.selectedCell) {
     const move = g.validMoves.find((m) => m.toR === r && m.toC === c);
     if (move) {
+      if (!net.ws || net.ws.readyState !== 1) {
+        window.ui.setStatus('Reconnecting — try that move again in a second…');
+        scheduleReconnect(200);
+        return;
+      }
       net.ws.send(JSON.stringify({ type: 'move', fromR: g.selectedCell.r, fromC: g.selectedCell.c, toR: r, toC: c }));
+      // Watchdog: if the confirming state doesn't come back, chase it, then
+      // force a reconnect. Prevents the silent "nobody can move" freeze.
+      net.pendingSince = Date.now();
+      setTimeout(() => { if (net.pendingSince) requestSync(); }, 1500);
+      setTimeout(() => {
+        if (net.pendingSince && net.ws) { try { net.ws.close(); } catch { /* ignore */ } }
+      }, 5000);
       g.deselect();
       window.ui.setStatus('Move sent…');
       return;
@@ -250,14 +296,28 @@ function wire() {
   $('online-join-code').addEventListener('keydown', (e) => { if (e.key === 'Enter') joinMatch(); });
   window.online = { submitSetup, handleMoveClick, requestRematch };
 
-  // When the tab becomes visible again (e.g. iPad woken/unlocked), force a resync —
-  // the server resends current state on connect, and sync pulls it on a live socket.
-  document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState !== 'visible' || !net.wantOpen) return;
-    if (net.ws && net.ws.readyState === 1) { try { net.ws.send(JSON.stringify({ type: 'sync' })); } catch { /* ignore */ } }
-    else scheduleReconnect(200);
-  });
-  window.addEventListener('online', () => { if (net.wantOpen) scheduleReconnect(200); });
+  // Wake handling: iOS freezes timers AND sockets while the tab sleeps, and a
+  // suspended socket can look open while receiving nothing (zombie). On any wake
+  // signal, sync — and if nothing arrives within 2.5s, force a reconnect.
+  const wakeResync = () => {
+    if (!net.wantOpen) return;
+    const before = net.lastRecv;
+    if (net.ws && net.ws.readyState === 1) {
+      try { net.ws.send(JSON.stringify({ type: 'sync' })); } catch { /* ignore */ }
+      setTimeout(() => {
+        if (net.wantOpen && net.lastRecv === before) {
+          try { net.ws.close(); } catch { /* ignore */ }
+          scheduleReconnect(300);
+        }
+      }, 2500);
+    } else {
+      scheduleReconnect(200);
+    }
+  };
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') wakeResync(); });
+  window.addEventListener('pageshow', wakeResync); // bfcache restore (iOS back/forward)
+  window.addEventListener('focus', wakeResync);
+  window.addEventListener('online', wakeResync);
 
   // Rejoin an in-progress match after a refresh / accidental reload.
   let saved = null;
