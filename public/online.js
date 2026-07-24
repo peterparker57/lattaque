@@ -49,10 +49,9 @@ async function createMatch() {
   const res = await fetch('/api/match/create', { method: 'POST', credentials: 'same-origin' });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) return setStatus(data.error || 'Could not create game.', true);
+  leaveMatch(); // drop any previous game's connection before joining the new room
   net.code = data.code;
   net.myColor = data.color; // 0 = RED (creator moves first)
-  net.phase = null;
-  net.version = null;
   $('online-code-box').classList.remove('hidden');
   $('online-code-value').textContent = data.code;
   connect();
@@ -66,10 +65,9 @@ async function joinMatch() {
   const res = await fetch(`/api/match/${code}/join`, { method: 'POST', credentials: 'same-origin' });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) return setStatus(data.error || 'Could not join game.', true);
+  leaveMatch(); // drop any previous game's connection before joining the new room
   net.code = code;
   net.myColor = data.color; // 1 = BLUE
-  net.phase = null;
-  net.version = null;
   connect();
 }
 
@@ -79,6 +77,20 @@ let heartbeat = null;
 
 function saveMatch() { try { sessionStorage.setItem(MATCH_KEY, net.code || ''); } catch { /* private mode */ } }
 function clearMatch() { try { sessionStorage.removeItem(MATCH_KEY); } catch { /* ignore */ } }
+
+// Fully drop the current match connection — used when starting a new game or
+// walking away from a finished one. Without this, the old match's heartbeat
+// keeps echoing states that fight the new lobby/game UI.
+function leaveMatch() {
+  net.wantOpen = false;
+  stopHeartbeat();
+  if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+  if (net.ws) { try { net.ws.close(); } catch { /* ignore */ } }
+  net.ws = null;
+  net.code = null; net.myColor = null; net.phase = null; net.version = null;
+  net.lastCombatKey = null; net.pendingSince = 0;
+  clearMatch();
+}
 
 function scheduleReconnect(delay = 1200) {
   if (reconnectTimer || !net.wantOpen) return;
@@ -182,7 +194,6 @@ function handleMessage(msg) {
   }
 
   if (msg.status === 'playing' || msg.status === 'gameover') {
-    closeModal();
     if (!isNew) {
       // Same snapshot we already rendered (heartbeat echo) — refresh only the
       // status line (opponent connected flags can change without a version bump).
@@ -193,10 +204,15 @@ function handleMessage(msg) {
     const board = boardFromView(msg.board);
     g.setOnlineBoard(board, msg.status === 'gameover' ? 'gameover' : 'playing', msg.turn, net.myColor);
     if (msg.status === 'playing') {
+      // Close the lobby only when ENTERING play — routine updates must never
+      // slam a lobby the player deliberately opened.
+      if (net.phase !== 'playing') closeModal();
       net.phase = 'playing';
       updateTurnStatus(msg);
     } else if (net.phase !== 'gameover') {
       net.phase = 'gameover';
+      closeModal();
+      clearMatch(); // a refresh after a finished game lands in the lobby, not a stale banner
       g.showOnlineGameOver(msg.winner === net.myColor, msg.result);
       if (window.auth) window.auth.restore(); // refresh the rating shown in the toolbar
     }
@@ -282,7 +298,14 @@ function handleMoveClick(r, c) {
 }
 
 function openModal() {
+  // Opening the lobby after a finished game means "I'm done with that match" —
+  // drop its connection so its heartbeat can't interfere with the new lobby.
+  if (net.phase === 'gameover') {
+    leaveMatch();
+    document.getElementById('game-over-banner').classList.add('hidden');
+  }
   $('online-modal').classList.remove('hidden');
+  $('online-code-box').classList.add('hidden'); // stale code from a previous create
   const logged = !!(window.auth && window.auth.user);
   setStatus(logged ? '' : 'Log in to play online.', !logged);
 }
