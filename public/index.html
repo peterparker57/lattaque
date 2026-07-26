@@ -10,7 +10,7 @@
 <div id="app">
   <div id="toolbar">
     <button id="btn-new-game">New Game</button>
-    <button id="btn-play-online">Play Online</button>
+    <button id="btn-play-online">Play Online<span id="online-badge" class="online-badge hidden"></span></button>
     <button id="btn-settings">Settings</button>
     <button id="btn-randomize" class="hidden">Randomize</button>
     <button id="btn-save-layout" class="hidden">Save Layout</button>
@@ -210,19 +210,12 @@
   </div>
   <div id="online-modal" class="modal hidden">
     <div class="modal-content online-content">
-      <h2>Play Online</h2>
-      <p class="online-sub">Create a game and share the code with a friend, or join with their code.</p>
+      <h2>Your Games</h2>
+      <div id="games-list" class="games-list"></div>
+      <div class="online-divider">start a new game</div>
       <div class="online-row">
-        <button id="btn-online-create" class="auth-btn auth-btn-primary">Create Game</button>
-      </div>
-      <div id="online-code-box" class="online-code-box hidden">
-        Your code: <span id="online-code-value" class="online-code"></span>
-        <div class="online-hint">Share this with your opponent, then wait for them to join.</div>
-      </div>
-      <div class="online-divider">or</div>
-      <div class="online-row">
-        <input type="text" id="online-join-code" placeholder="Enter code" maxlength="12" class="online-input">
-        <button id="btn-online-join" class="auth-btn">Join</button>
+        <input type="text" id="challenge-name" placeholder="Opponent's username" maxlength="20" class="online-input online-input-name" autocapitalize="none" autocomplete="off">
+        <button id="btn-challenge" class="auth-btn auth-btn-primary">Go</button>
       </div>
       <div id="online-status" class="online-status"></div>
       <div class="modal-buttons">

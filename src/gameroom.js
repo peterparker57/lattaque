@@ -130,46 +130,53 @@ export class GameRoom extends DurableObject {
     const url = new URL(request.url);
     const body = await request.json().catch(() => ({}));
     if (url.pathname.endsWith('/create')) return this.handleCreate(body);
-    if (url.pathname.endsWith('/join')) return this.handleJoin(body);
     return new Response('not found', { status: 404 });
   }
 
-  async handleCreate({ userId, username }) {
-    if (!userId) return json({ error: 'auth required' }, 401);
+  // WWF-style instant start: BOTH players are seeded up front (challenger=RED,
+  // challenged=BLUE) and the match begins in setup — there is no join step.
+  async handleCreate({ id, red, blue }) {
+    if (!red?.userId || !blue?.userId) return json({ error: 'both players required' }, 400);
     const existing = await this.loadState();
-    if (existing) return json({ error: 'code in use' }, 409); // Worker retries with a new code
+    if (existing) return json({ error: 'id in use' }, 409); // Worker retries with a fresh id
     const state = {
-      code: null, // set by the Worker's idFromName; carried for display via join/ws below
-      status: 'waiting',
-      players: { [RED]: { userId, username, ready: false }, [BLUE]: null },
+      code: id || null, // the match id (doubles as the D1 matches row key)
+      status: 'setup',
+      players: {
+        [RED]: { userId: red.userId, username: red.username, ready: false },
+        [BLUE]: { userId: blue.userId, username: blue.username, ready: false },
+      },
       board: null,
       turn: RED,
       winner: null,
       createdAt: Date.now(),
     };
     await this.saveState(state);
-    return json({ ok: true, color: RED }, 200);
+    return json({ ok: true }, 200);
   }
 
-  async handleJoin({ userId, username, code }) {
-    if (!userId) return json({ error: 'auth required' }, 401);
-    const state = await this.loadState();
-    if (!state) return json({ error: 'no such match' }, 404);
-    if (code && !state.code) state.code = code; // stamp display code on first join
-
-    // Rejoin if already a player.
-    const existing = this.colorOfUser(state, userId);
-    if (existing !== null) {
-      await this.saveState(state);
-      return json({ ok: true, color: existing, rejoin: true });
-    }
-    if (state.players[BLUE]) return json({ error: 'match is full' }, 409);
-
-    state.players[BLUE] = { userId, username, ready: false };
-    if (state.status === 'waiting') state.status = 'setup';
-    await this.saveState(state);
-    await this.broadcastState();
-    return json({ ok: true, color: BLUE }, 200);
+  // Mirror the D1 row that powers the games list. Guarded: a D1 hiccup must
+  // never break the live game (same policy as the ELO write). Updating
+  // red_id/blue_id also keeps the row correct across rematch color swaps.
+  async syncMatchRow(state) {
+    if (!state.code) return;
+    try {
+      await this.env.DB.prepare(
+        `UPDATE matches
+            SET status=?, turn=?, winner=?, red_ready=?, blue_ready=?, red_id=?, blue_id=?, updated_at=?
+          WHERE id=?`,
+      ).bind(
+        state.status,
+        state.status === 'playing' ? state.turn : null,
+        state.winner,
+        state.players[RED]?.ready ? 1 : 0,
+        state.players[BLUE]?.ready ? 1 : 0,
+        state.players[RED]?.userId ?? null,
+        state.players[BLUE]?.userId ?? null,
+        Date.now(),
+        state.code,
+      ).run();
+    } catch { /* the list may lag; the game itself is unaffected */ }
   }
 
   async handleWsConnect(userId, username) {
@@ -232,6 +239,7 @@ export class GameRoom extends DurableObject {
       }
 
       await this.saveState(state);
+      await this.syncMatchRow(state);
       ws.send(JSON.stringify({ type: 'setup_ok' }));
       await this.broadcastState();
       return;
@@ -259,6 +267,7 @@ export class GameRoom extends DurableObject {
         state.status = 'setup';
       }
       await this.saveState(state);
+      await this.syncMatchRow(state);
       await this.broadcastState();
       return;
     }
@@ -299,6 +308,7 @@ export class GameRoom extends DurableObject {
       }
 
       await this.saveState(state);
+      await this.syncMatchRow(state);
       await this.broadcastState();
       return;
     }

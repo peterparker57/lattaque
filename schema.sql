@@ -24,3 +24,21 @@ CREATE TABLE IF NOT EXISTS sessions (
 
 CREATE INDEX IF NOT EXISTS idx_sessions_user    ON sessions(user_id);
 CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at);
+
+-- One row per match (WWF-style games list). The row id doubles as the GameRoom
+-- Durable Object name; the DO keeps this row in sync as the game progresses.
+CREATE TABLE IF NOT EXISTS matches (
+  id          TEXT    PRIMARY KEY,
+  red_id      INTEGER NOT NULL REFERENCES users(id),
+  blue_id     INTEGER NOT NULL REFERENCES users(id),
+  status      TEXT    NOT NULL DEFAULT 'setup',  -- setup | playing | gameover
+  turn        INTEGER,                            -- 0 red / 1 blue, while playing
+  winner      INTEGER,                            -- 0 / 1 once gameover
+  red_ready   INTEGER NOT NULL DEFAULT 0,         -- army submitted flags (setup badges)
+  blue_ready  INTEGER NOT NULL DEFAULT 0,
+  created_at  INTEGER NOT NULL,
+  updated_at  INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_matches_red  ON matches(red_id);
+CREATE INDEX IF NOT EXISTS idx_matches_blue ON matches(blue_id);

@@ -39,29 +39,67 @@ export default {
 
       // --- Matchmaking (all require a logged-in user) ---
 
-      // Create a match: allocate a unique room code and seed the GameRoom (creator = RED).
-      if (url.pathname === '/api/match/create' && request.method === 'POST') {
+      // Start a game vs a username (WWF-style instant start, no accept step):
+      // seed the GameRoom with BOTH players and record the match row for lists.
+      if (url.pathname === '/api/match/challenge' && request.method === 'POST') {
         const user = await getSessionUser(env, request);
         if (!user) return Response.json({ error: 'login required' }, { status: 401 });
+        const body = await request.json().catch(() => ({}));
+        const oppName = String(body.opponent || '').trim();
+        if (!oppName) return Response.json({ error: 'enter an opponent username' }, { status: 400 });
+        const opp = await env.DB.prepare('SELECT id, username FROM users WHERE username = ?')
+          .bind(oppName).first();
+        if (!opp) return Response.json({ error: `no player named "${oppName}"` }, { status: 404 });
+        if (opp.id === user.id) return Response.json({ error: 'you cannot challenge yourself' }, { status: 400 });
+
         for (let attempt = 0; attempt < 6; attempt++) {
-          const code = genRoomCode();
-          const stub = env.GAME_ROOMS.get(env.GAME_ROOMS.idFromName(code));
-          const res = await stub.fetch(doReq('create', { userId: user.id, username: user.username, code }));
-          if (res.status === 200) return Response.json({ code, color: 0 });
-          if (res.status === 409) continue; // code collision — try another
-          return Response.json({ error: 'could not create match' }, { status: 500 });
+          const id = genRoomCode();
+          const stub = env.GAME_ROOMS.get(env.GAME_ROOMS.idFromName(id));
+          const res = await stub.fetch(doReq('create', {
+            id,
+            red: { userId: user.id, username: user.username },
+            blue: { userId: opp.id, username: opp.username },
+          }));
+          if (res.status === 409) continue; // id collision — retry with a fresh one
+          if (res.status !== 200) return Response.json({ error: 'could not create match' }, { status: 500 });
+          const now = Date.now();
+          await env.DB.prepare(
+            `INSERT INTO matches (id, red_id, blue_id, status, red_ready, blue_ready, created_at, updated_at)
+             VALUES (?, ?, ?, 'setup', 0, 0, ?, ?)`,
+          ).bind(id, user.id, opp.id, now, now).run();
+          return Response.json({ id, color: 0, opponent: opp.username });
         }
-        return Response.json({ error: 'could not allocate a room code' }, { status: 503 });
+        return Response.json({ error: 'could not allocate a match id' }, { status: 503 });
       }
 
-      // Join a match by code.
-      const joinMatch = url.pathname.match(/^\/api\/match\/([A-Za-z0-9]{1,12})\/join$/);
-      if (joinMatch && request.method === 'POST') {
+      // My games list (both colors), most recently active first.
+      if (url.pathname === '/api/match/mine' && request.method === 'GET') {
         const user = await getSessionUser(env, request);
         if (!user) return Response.json({ error: 'login required' }, { status: 401 });
-        const code = joinMatch[1].toUpperCase();
-        const stub = env.GAME_ROOMS.get(env.GAME_ROOMS.idFromName(code));
-        return stub.fetch(doReq('join', { userId: user.id, username: user.username, code }));
+        const rows = await env.DB.prepare(
+          `SELECT m.id, m.status, m.turn, m.winner, m.red_ready, m.blue_ready, m.updated_at,
+                  m.red_id, ru.username AS red_name, bu.username AS blue_name
+             FROM matches m
+             JOIN users ru ON ru.id = m.red_id
+             JOIN users bu ON bu.id = m.blue_id
+            WHERE m.red_id = ? OR m.blue_id = ?
+            ORDER BY m.updated_at DESC LIMIT 30`,
+        ).bind(user.id, user.id).all();
+        const games = (rows.results || []).map((m) => {
+          const myColor = m.red_id === user.id ? 0 : 1;
+          return {
+            id: m.id,
+            myColor,
+            opponent: myColor === 0 ? m.blue_name : m.red_name,
+            status: m.status,
+            turn: m.turn,
+            winner: m.winner,
+            myReady: !!(myColor === 0 ? m.red_ready : m.blue_ready),
+            oppReady: !!(myColor === 0 ? m.blue_ready : m.red_ready),
+            updatedAt: m.updated_at,
+          };
+        });
+        return Response.json({ games });
       }
 
       // Match WebSocket -> resolve the user, then route the upgrade to the GameRoom DO.

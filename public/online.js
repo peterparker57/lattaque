@@ -43,32 +43,88 @@ function requireLogin() {
   return false;
 }
 
-async function createMatch() {
+// Start a new game vs a username (WWF-style: instant, appears in their list too).
+async function challenge() {
   if (!requireLogin()) return;
-  setStatus('Creating game…');
-  const res = await fetch('/api/match/create', { method: 'POST', credentials: 'same-origin' });
+  const opponent = ($('challenge-name').value || '').trim();
+  if (!opponent) return setStatus("Enter your opponent's username.", true);
+  setStatus('Starting game…');
+  const res = await fetch('/api/match/challenge', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'same-origin',
+    body: JSON.stringify({ opponent }),
+  });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) return setStatus(data.error || 'Could not create game.', true);
-  leaveMatch(); // drop any previous game's connection before joining the new room
-  net.code = data.code;
-  net.myColor = data.color; // 0 = RED (creator moves first)
-  $('online-code-box').classList.remove('hidden');
-  $('online-code-value').textContent = data.code;
-  connect();
+  if (!res.ok) return setStatus(data.error || 'Could not start the game.', true);
+  $('challenge-name').value = '';
+  openGame(data.id);
 }
 
-async function joinMatch() {
-  if (!requireLogin()) return;
-  const code = ($('online-join-code').value || '').trim().toUpperCase();
-  if (!code) return setStatus('Enter a game code.', true);
-  setStatus('Joining…');
-  const res = await fetch(`/api/match/${code}/join`, { method: 'POST', credentials: 'same-origin' });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) return setStatus(data.error || 'Could not join game.', true);
-  leaveMatch(); // drop any previous game's connection before joining the new room
-  net.code = code;
-  net.myColor = data.color; // 1 = BLUE
+// Open (or resume) a game from the list.
+function openGame(id) {
+  leaveMatch();
+  net.code = id;
   connect();
+  setStatus('Opening game…');
+}
+
+// ---- games list ----
+
+function needsMyAction(g) {
+  return (g.status === 'setup' && !g.myReady) || (g.status === 'playing' && g.turn === g.myColor);
+}
+
+function gameBadge(g) {
+  if (g.status === 'setup') return g.myReady ? ['waiting for them', ''] : ['PLACE YOUR ARMY', 'gl-act'];
+  if (g.status === 'playing') return g.turn === g.myColor ? ['YOUR TURN', 'gl-act'] : ['their turn', ''];
+  return g.winner === g.myColor ? ['You won \u{1F3C6}', 'gl-won'] : ['You lost', 'gl-lost'];
+}
+
+async function loadGames() {
+  const box = $('games-list');
+  try {
+    const res = await fetch('/api/match/mine', { credentials: 'same-origin' });
+    if (!res.ok) { box.innerHTML = '<div class="gl-empty">Log in to see your games.</div>'; return; }
+    const { games } = await res.json();
+    updateButtonBadge(games);
+    if (!games.length) { box.innerHTML = '<div class="gl-empty">No games yet — start one below!</div>'; return; }
+    // Games needing me first, then active, then finished (list arrives newest-first).
+    games.sort((a, b) => (needsMyAction(b) - needsMyAction(a)) || (a.status === 'gameover') - (b.status === 'gameover'));
+    box.innerHTML = games.map((g) => {
+      const [label, cls] = gameBadge(g);
+      return `<div class="gl-row" data-id="${g.id}">
+        <span class="gl-vs">⚔️ vs <b>${escapeHtml(g.opponent)}</b></span>
+        <span class="gl-badge ${cls}">${label}</span>
+      </div>`;
+    }).join('');
+    for (const row of box.querySelectorAll('.gl-row')) {
+      row.addEventListener('click', () => openGame(row.dataset.id));
+    }
+  } catch {
+    box.innerHTML = '<div class="gl-empty">Could not load games.</div>';
+  }
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+// Small "N games need you" badge on the Play Online button.
+function updateButtonBadge(games) {
+  const n = (games || []).filter(needsMyAction).length;
+  const el = $('online-badge');
+  el.textContent = n;
+  el.classList.toggle('hidden', n === 0);
+}
+
+async function pollBadge() {
+  if (!(window.auth && window.auth.user)) return;
+  try {
+    const res = await fetch('/api/match/mine', { credentials: 'same-origin' });
+    if (res.ok) updateButtonBadge((await res.json()).games);
+  } catch { /* offline — badge just goes stale */ }
 }
 
 const MATCH_KEY = 'lattaque-match';
@@ -183,12 +239,21 @@ function handleMessage(msg) {
   setStatus(`Red: ${red}    Blue: ${blue}`);
 
   if (msg.status === 'setup') {
-    // Enter (or, for a rematch, re-enter) local army-arranging once both are present.
-    if (msg.players.red && msg.players.blue && net.phase !== 'setup') {
+    // Enter (or, for a rematch, re-enter) local army-arranging.
+    if (net.phase !== 'setup') {
       net.phase = 'setup';
       net.lastCombatKey = null;
       setTimeout(closeModal, 400);
       g.initOnlineSetup(net.myColor);
+    }
+    // Already submitted (e.g. resuming from the games list): no arranging UI —
+    // just wait for the opponent.
+    const me = net.myColor === RED ? msg.players.red : msg.players.blue;
+    if (me && me.ready) {
+      ['btn-randomize', 'btn-save-layout', 'btn-load-layout', 'btn-start-game']
+        .forEach((id) => document.getElementById(id).classList.add('hidden'));
+      const opp = net.myColor === RED ? msg.players.blue : msg.players.red;
+      window.ui.setStatus(`Army sent — waiting for ${opp ? opp.username : 'your opponent'}…`);
     }
     return;
   }
@@ -297,6 +362,8 @@ function handleMoveClick(r, c) {
   if (piece && piece.color === g.playerColor && piece.isMovable()) g.selectPiece(r, c);
 }
 
+let listPoll = null;
+
 function openModal() {
   // Opening the lobby after a finished game means "I'm done with that match" —
   // drop its connection so its heartbeat can't interfere with the new lobby.
@@ -305,19 +372,27 @@ function openModal() {
     document.getElementById('game-over-banner').classList.add('hidden');
   }
   $('online-modal').classList.remove('hidden');
-  $('online-code-box').classList.add('hidden'); // stale code from a previous create
   const logged = !!(window.auth && window.auth.user);
   setStatus(logged ? '' : 'Log in to play online.', !logged);
+  loadGames();
+  if (!listPoll) listPoll = setInterval(loadGames, 20000); // opponent may act while we look
 }
-function closeModal() { $('online-modal').classList.add('hidden'); }
+function closeModal() {
+  $('online-modal').classList.add('hidden');
+  if (listPoll) { clearInterval(listPoll); listPoll = null; }
+}
 
 function wire() {
   $('btn-play-online').addEventListener('click', openModal);
-  $('btn-online-create').addEventListener('click', createMatch);
-  $('btn-online-join').addEventListener('click', joinMatch);
+  $('btn-challenge').addEventListener('click', challenge);
   $('btn-online-close').addEventListener('click', closeModal);
-  $('online-join-code').addEventListener('keydown', (e) => { if (e.key === 'Enter') joinMatch(); });
-  window.online = { submitSetup, handleMoveClick, requestRematch };
+  $('challenge-name').addEventListener('keydown', (e) => { if (e.key === 'Enter') challenge(); });
+  window.online = { submitSetup, handleMoveClick, requestRematch, openGame };
+
+  // "N games need you" badge: refresh on login/logout and every 30s.
+  window.addEventListener('auth:changed', pollBadge);
+  setInterval(pollBadge, 30000);
+  setTimeout(pollBadge, 1500); // after auth restore
 
   // Wake handling: iOS freezes timers AND sockets while the tab sleeps, and a
   // suspended socket can look open while receiving nothing (zombie). On any wake
